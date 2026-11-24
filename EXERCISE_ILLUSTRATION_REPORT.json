@@ -1,0 +1,1049 @@
+{
+  "total_exercises": 119,
+  "distinct_illustration_ids": [
+    "skull_crusher",
+    "ezbar_biceps_curl",
+    "elevacao_frontal_com_halteres",
+    "elevacao_pelvica_unilateral",
+    "elevacao_frontal_no_cabo",
+    "tbar_row",
+    "triceps_banco",
+    "bench_dips",
+    "good_morning",
+    "flexao_diamante",
+    "triceps_pulley_barra",
+    "seated_leg_curl",
+    "vacuo_abdominal",
+    "levantamento_terra",
+    "triceps_corda_polia",
+    "prancha_isometrica",
+    "prancha_com_elevacao",
+    "triceps_kickback",
+    "leg_press_horizontal",
+    "pec_deck",
+    "reverse_flye_machine",
+    "dumbbell_row_single_arm",
+    "ponte_glute_bridge",
+    "remada_na_maquina",
+    "bench_press_incline",
+    "lying_leg_curl",
+    "cadeira_adutora",
+    "superman",
+    "barbell_squat",
+    "leg_extension",
+    "dumbbell_lunge",
+    "cable_face_pull",
+    "elevacao_de_pernas_no_banco_inclinado",
+    "flexao_declinada",
+    "hip_thrust_machine",
+    "elevacao_de_pernas_na_barra_fixa",
+    "levantamento_terra_romeno",
+    "lat_pulldown",
+    "levantamento_terra_sumo",
+    "rollout_no_cabo",
+    "barra_fixa_supinada",
+    "cross_over_polia_media",
+    "remada_alta_com_barra",
+    "dead_bug",
+    "bench_press_barbell",
+    "standing_calf_raise",
+    "elevacao_de_pernas_suspenso",
+    "seated_calf_raise",
+    "elevacao_frontal_com_barra",
+    "rollout_com_roda_abdominal",
+    "rosca_no_cabo",
+    "smith_squat",
+    "pullover_com_halteres",
+    "barbell_row",
+    "seated_cable_row",
+    "seated_abductor",
+    "remada_alta_polia",
+    "flexao_de_bracos",
+    "triceps_frances_com_halteres",
+    "elevacao_de_pernas_no_solo",
+    "stiff_deadlift",
+    "avanco_lateral",
+    "prancha_lateral",
+    "alternating_dumbbell_curl",
+    "bench_press_decline_machine",
+    "reverse_barbell_curl",
+    "bird_dog",
+    "remada_com_apoio_no_peito",
+    "dumbbell_flye",
+    "crunch_na_maquina",
+    "pallof_press",
+    "barra_fixa_pronada",
+    "hammer_curl",
+    "crunch_no_cabo",
+    "dumbbell_shrug",
+    "dumbbell_shoulder_press",
+    "preacher_curl",
+    "leg_press_45",
+    "bicicleta_no_ar",
+    "hack_squat",
+    "barra_fixa_neutra",
+    "flexao_com_apoio_elevado",
+    "russian_twist",
+    "rosca_concentrada",
+    "abdominal_crunch_solo",
+    "elevacao_lateral_halteres",
+    "hyperextension_bench"
+  ],
+  "distinct_count": 87,
+  "covered": 0,
+  "missing": 119,
+  "details": [
+    {
+      "id": "peito_1",
+      "name": "Supino Reto Barra",
+      "category": "Peito",
+      "illustrationId": "bench_press_barbell",
+      "expected_asset": "ex_bench_press_barbell.png",
+      "has_asset": false
+    },
+    {
+      "id": "peito_2",
+      "name": "Supino Inclinado Halteres",
+      "category": "Peito",
+      "illustrationId": "bench_press_incline",
+      "expected_asset": "ex_bench_press_incline.png",
+      "has_asset": false
+    },
+    {
+      "id": "peito_3",
+      "name": "Crucifixo Reto",
+      "category": "Peito",
+      "illustrationId": "dumbbell_flye",
+      "expected_asset": "ex_dumbbell_flye.png",
+      "has_asset": false
+    },
+    {
+      "id": "peito_4",
+      "name": "Cross Over Polia Média",
+      "category": "Peito",
+      "illustrationId": "cross_over_polia_media",
+      "expected_asset": "ex_cross_over_polia_media.png",
+      "has_asset": false
+    },
+    {
+      "id": "peito_5",
+      "name": "Flexão de Braços",
+      "category": "Peito",
+      "illustrationId": "flexao_de_bracos",
+      "expected_asset": "ex_flexao_de_bracos.png",
+      "has_asset": false
+    },
+    {
+      "id": "costas_1",
+      "name": "Puxada Frontal Pulley",
+      "category": "Costas",
+      "illustrationId": "lat_pulldown",
+      "expected_asset": "ex_lat_pulldown.png",
+      "has_asset": false
+    },
+    {
+      "id": "costas_2",
+      "name": "Remada Curvada Barra",
+      "category": "Costas",
+      "illustrationId": "barbell_row",
+      "expected_asset": "ex_barbell_row.png",
+      "has_asset": false
+    },
+    {
+      "id": "costas_3",
+      "name": "Remada Baixa Triângulo",
+      "category": "Costas",
+      "illustrationId": "seated_cable_row",
+      "expected_asset": "ex_seated_cable_row.png",
+      "has_asset": false
+    },
+    {
+      "id": "costas_4",
+      "name": "Barra Fixa Pronada",
+      "category": "Costas",
+      "illustrationId": "barra_fixa_pronada",
+      "expected_asset": "ex_barra_fixa_pronada.png",
+      "has_asset": false
+    },
+    {
+      "id": "costas_5",
+      "name": "Levantamento Terra",
+      "category": "Costas",
+      "illustrationId": "levantamento_terra",
+      "expected_asset": "ex_levantamento_terra.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_1",
+      "name": "Agachamento Livre Barra",
+      "category": "Pernas",
+      "illustrationId": "barbell_squat",
+      "expected_asset": "ex_barbell_squat.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_2",
+      "name": "Leg Press 45 Graus",
+      "category": "Pernas",
+      "illustrationId": "leg_press_45",
+      "expected_asset": "ex_leg_press_45.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_3",
+      "name": "Cadeira Extensora",
+      "category": "Pernas",
+      "illustrationId": "leg_extension",
+      "expected_asset": "ex_leg_extension.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_4",
+      "name": "Mesa Flexora",
+      "category": "Pernas",
+      "illustrationId": "lying_leg_curl",
+      "expected_asset": "ex_lying_leg_curl.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_5",
+      "name": "Afundo com Halteres",
+      "category": "Pernas",
+      "illustrationId": "dumbbell_lunge",
+      "expected_asset": "ex_dumbbell_lunge.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_6",
+      "name": "Hip Thrust com Barra",
+      "category": "Pernas",
+      "illustrationId": "hip_thrust_machine",
+      "expected_asset": "ex_hip_thrust_machine.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_7",
+      "name": "Cadeira Abdutora",
+      "category": "Pernas",
+      "illustrationId": "seated_abductor",
+      "expected_asset": "ex_seated_abductor.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_8",
+      "name": "Agachamento Búlgaro",
+      "category": "Pernas",
+      "illustrationId": "barbell_squat",
+      "expected_asset": "ex_barbell_squat.png",
+      "has_asset": false
+    },
+    {
+      "id": "ombros_1",
+      "name": "Desenvolvimento Halteres",
+      "category": "Ombros",
+      "illustrationId": "dumbbell_shoulder_press",
+      "expected_asset": "ex_dumbbell_shoulder_press.png",
+      "has_asset": false
+    },
+    {
+      "id": "ombros_2",
+      "name": "Elevação Lateral Halteres",
+      "category": "Ombros",
+      "illustrationId": "elevacao_lateral_halteres",
+      "expected_asset": "ex_elevacao_lateral_halteres.png",
+      "has_asset": false
+    },
+    {
+      "id": "ombros_3",
+      "name": "Desenvolvimento na Máquina",
+      "category": "Ombros",
+      "illustrationId": "dumbbell_shoulder_press",
+      "expected_asset": "ex_dumbbell_shoulder_press.png",
+      "has_asset": false
+    },
+    {
+      "id": "ombros_4",
+      "name": "Crucifixo Invertido Halteres",
+      "category": "Ombros",
+      "illustrationId": "reverse_flye_machine",
+      "expected_asset": "ex_reverse_flye_machine.png",
+      "has_asset": false
+    },
+    {
+      "id": "biceps_1",
+      "name": "Rosca Direta Barra W",
+      "category": "Bíceps",
+      "illustrationId": "ezbar_biceps_curl",
+      "expected_asset": "ex_ezbar_biceps_curl.png",
+      "has_asset": false
+    },
+    {
+      "id": "biceps_2",
+      "name": "Rosca Alternada Halteres",
+      "category": "Bíceps",
+      "illustrationId": "alternating_dumbbell_curl",
+      "expected_asset": "ex_alternating_dumbbell_curl.png",
+      "has_asset": false
+    },
+    {
+      "id": "biceps_3",
+      "name": "Rosca Concentrada",
+      "category": "Bíceps",
+      "illustrationId": "rosca_concentrada",
+      "expected_asset": "ex_rosca_concentrada.png",
+      "has_asset": false
+    },
+    {
+      "id": "biceps_4",
+      "name": "Rosca Scott Barra W",
+      "category": "Bíceps",
+      "illustrationId": "ezbar_biceps_curl",
+      "expected_asset": "ex_ezbar_biceps_curl.png",
+      "has_asset": false
+    },
+    {
+      "id": "triceps_1",
+      "name": "Tríceps Pulley Barra",
+      "category": "Tríceps",
+      "illustrationId": "triceps_pulley_barra",
+      "expected_asset": "ex_triceps_pulley_barra.png",
+      "has_asset": false
+    },
+    {
+      "id": "triceps_2",
+      "name": "Tríceps Testa Barra W",
+      "category": "Tríceps",
+      "illustrationId": "skull_crusher",
+      "expected_asset": "ex_skull_crusher.png",
+      "has_asset": false
+    },
+    {
+      "id": "triceps_3",
+      "name": "Tríceps Corda Polia",
+      "category": "Tríceps",
+      "illustrationId": "triceps_corda_polia",
+      "expected_asset": "ex_triceps_corda_polia.png",
+      "has_asset": false
+    },
+    {
+      "id": "triceps_4",
+      "name": "Mergulho Paralelas",
+      "category": "Tríceps",
+      "illustrationId": "bench_dips",
+      "expected_asset": "ex_bench_dips.png",
+      "has_asset": false
+    },
+    {
+      "id": "trapezio_1",
+      "name": "Encolhimento Halteres",
+      "category": "Trapézio",
+      "illustrationId": "dumbbell_shrug",
+      "expected_asset": "ex_dumbbell_shrug.png",
+      "has_asset": false
+    },
+    {
+      "id": "trapezio_2",
+      "name": "Remada Alta Polia",
+      "category": "Trapézio",
+      "illustrationId": "remada_alta_polia",
+      "expected_asset": "ex_remada_alta_polia.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_1",
+      "name": "Abdominal Crunch Solo",
+      "category": "Abdominais",
+      "illustrationId": "abdominal_crunch_solo",
+      "expected_asset": "ex_abdominal_crunch_solo.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_2",
+      "name": "Elevação de Pernas Suspenso",
+      "category": "Abdominais",
+      "illustrationId": "elevacao_de_pernas_suspenso",
+      "expected_asset": "ex_elevacao_de_pernas_suspenso.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_3",
+      "name": "Prancha Isométrica",
+      "category": "Abdominais",
+      "illustrationId": "prancha_isometrica",
+      "expected_asset": "ex_prancha_isometrica.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_9",
+      "name": "Agachamento no Smith",
+      "category": "Pernas",
+      "illustrationId": "smith_squat",
+      "expected_asset": "ex_smith_squat.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_10",
+      "name": "Hack Machine",
+      "category": "Pernas",
+      "illustrationId": "hack_squat",
+      "expected_asset": "ex_hack_squat.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_11",
+      "name": "Panturrilha Sentado",
+      "category": "Pernas",
+      "illustrationId": "seated_calf_raise",
+      "expected_asset": "ex_seated_calf_raise.png",
+      "has_asset": false
+    },
+    {
+      "id": "peito_6",
+      "name": "Peck Deck",
+      "category": "Peito",
+      "illustrationId": "pec_deck",
+      "expected_asset": "ex_pec_deck.png",
+      "has_asset": false
+    },
+    {
+      "id": "peito_7",
+      "name": "Supino Máquina",
+      "category": "Peito",
+      "illustrationId": "bench_press_barbell",
+      "expected_asset": "ex_bench_press_barbell.png",
+      "has_asset": false
+    },
+    {
+      "id": "costas_6",
+      "name": "Remada com Apoio no Peito",
+      "category": "Costas",
+      "illustrationId": "remada_com_apoio_no_peito",
+      "expected_asset": "ex_remada_com_apoio_no_peito.png",
+      "has_asset": false
+    },
+    {
+      "id": "peito_8",
+      "name": "Supino Reto com Halteres",
+      "category": "Peito",
+      "illustrationId": "bench_press_barbell",
+      "expected_asset": "ex_bench_press_barbell.png",
+      "has_asset": false
+    },
+    {
+      "id": "peito_9",
+      "name": "Supino Inclinado com Barra",
+      "category": "Peito",
+      "illustrationId": "bench_press_incline",
+      "expected_asset": "ex_bench_press_incline.png",
+      "has_asset": false
+    },
+    {
+      "id": "peito_10",
+      "name": "Supino Declinado com Barra",
+      "category": "Peito",
+      "illustrationId": "bench_press_decline_machine",
+      "expected_asset": "ex_bench_press_decline_machine.png",
+      "has_asset": false
+    },
+    {
+      "id": "peito_11",
+      "name": "Supino Declinado com Halteres",
+      "category": "Peito",
+      "illustrationId": "bench_press_decline_machine",
+      "expected_asset": "ex_bench_press_decline_machine.png",
+      "has_asset": false
+    },
+    {
+      "id": "peito_12",
+      "name": "Crucifixo Inclinado",
+      "category": "Peito",
+      "illustrationId": "dumbbell_flye",
+      "expected_asset": "ex_dumbbell_flye.png",
+      "has_asset": false
+    },
+    {
+      "id": "peito_13",
+      "name": "Crucifixo Declinado",
+      "category": "Peito",
+      "illustrationId": "dumbbell_flye",
+      "expected_asset": "ex_dumbbell_flye.png",
+      "has_asset": false
+    },
+    {
+      "id": "peito_15",
+      "name": "Supino Declinado na Máquina",
+      "category": "Peito",
+      "illustrationId": "bench_press_decline_machine",
+      "expected_asset": "ex_bench_press_decline_machine.png",
+      "has_asset": false
+    },
+    {
+      "id": "peito_16",
+      "name": "Supino Declinado no Smith",
+      "category": "Peito",
+      "illustrationId": "bench_press_decline_machine",
+      "expected_asset": "ex_bench_press_decline_machine.png",
+      "has_asset": false
+    },
+    {
+      "id": "peito_14",
+      "name": "Pullover com Halteres",
+      "category": "Peito",
+      "illustrationId": "pullover_com_halteres",
+      "expected_asset": "ex_pullover_com_halteres.png",
+      "has_asset": false
+    },
+    {
+      "id": "peito_15",
+      "name": "Mergulho em Paralelas (Foco Peitoral)",
+      "category": "Peito",
+      "illustrationId": "bench_dips",
+      "expected_asset": "ex_bench_dips.png",
+      "has_asset": false
+    },
+    {
+      "id": "peito_16",
+      "name": "Flexão Diamante",
+      "category": "Peito",
+      "illustrationId": "flexao_diamante",
+      "expected_asset": "ex_flexao_diamante.png",
+      "has_asset": false
+    },
+    {
+      "id": "peito_17",
+      "name": "Flexão Declinada",
+      "category": "Peito",
+      "illustrationId": "flexao_declinada",
+      "expected_asset": "ex_flexao_declinada.png",
+      "has_asset": false
+    },
+    {
+      "id": "peito_18",
+      "name": "Flexão com Apoio Elevado",
+      "category": "Peito",
+      "illustrationId": "flexao_com_apoio_elevado",
+      "expected_asset": "ex_flexao_com_apoio_elevado.png",
+      "has_asset": false
+    },
+    {
+      "id": "ombros_5",
+      "name": "Desenvolvimento Militar com Barra",
+      "category": "Ombros",
+      "illustrationId": "dumbbell_shoulder_press",
+      "expected_asset": "ex_dumbbell_shoulder_press.png",
+      "has_asset": false
+    },
+    {
+      "id": "ombros_6",
+      "name": "Desenvolvimento Arnold",
+      "category": "Ombros",
+      "illustrationId": "dumbbell_shoulder_press",
+      "expected_asset": "ex_dumbbell_shoulder_press.png",
+      "has_asset": false
+    },
+    {
+      "id": "ombros_7",
+      "name": "Elevação Frontal com Halteres",
+      "category": "Ombros",
+      "illustrationId": "elevacao_frontal_com_halteres",
+      "expected_asset": "ex_elevacao_frontal_com_halteres.png",
+      "has_asset": false
+    },
+    {
+      "id": "ombros_8",
+      "name": "Elevação Frontal com Barra",
+      "category": "Ombros",
+      "illustrationId": "elevacao_frontal_com_barra",
+      "expected_asset": "ex_elevacao_frontal_com_barra.png",
+      "has_asset": false
+    },
+    {
+      "id": "ombros_9",
+      "name": "Elevação Frontal no Cabo",
+      "category": "Ombros",
+      "illustrationId": "elevacao_frontal_no_cabo",
+      "expected_asset": "ex_elevacao_frontal_no_cabo.png",
+      "has_asset": false
+    },
+    {
+      "id": "triceps_5",
+      "name": "Tríceps Francês com Halteres",
+      "category": "Tríceps",
+      "illustrationId": "triceps_frances_com_halteres",
+      "expected_asset": "ex_triceps_frances_com_halteres.png",
+      "has_asset": false
+    },
+    {
+      "id": "triceps_6",
+      "name": "Tríceps Banco",
+      "category": "Tríceps",
+      "illustrationId": "triceps_banco",
+      "expected_asset": "ex_triceps_banco.png",
+      "has_asset": false
+    },
+    {
+      "id": "triceps_7",
+      "name": "Tríceps Kickback",
+      "category": "Tríceps",
+      "illustrationId": "triceps_kickback",
+      "expected_asset": "ex_triceps_kickback.png",
+      "has_asset": false
+    },
+    {
+      "id": "costas_7",
+      "name": "Remada Curvada com Halteres",
+      "category": "Costas",
+      "illustrationId": "barbell_row",
+      "expected_asset": "ex_barbell_row.png",
+      "has_asset": false
+    },
+    {
+      "id": "costas_8",
+      "name": "Remada Cavalinho",
+      "category": "Costas",
+      "illustrationId": "tbar_row",
+      "expected_asset": "ex_tbar_row.png",
+      "has_asset": false
+    },
+    {
+      "id": "costas_9",
+      "name": "Remada Serrote",
+      "category": "Costas",
+      "illustrationId": "dumbbell_row_single_arm",
+      "expected_asset": "ex_dumbbell_row_single_arm.png",
+      "has_asset": false
+    },
+    {
+      "id": "costas_10",
+      "name": "Remada na Máquina",
+      "category": "Costas",
+      "illustrationId": "remada_na_maquina",
+      "expected_asset": "ex_remada_na_maquina.png",
+      "has_asset": false
+    },
+    {
+      "id": "costas_11",
+      "name": "Puxada Atrás da Nuca",
+      "category": "Costas",
+      "illustrationId": "lat_pulldown",
+      "expected_asset": "ex_lat_pulldown.png",
+      "has_asset": false
+    },
+    {
+      "id": "costas_12",
+      "name": "Puxada no Triângulo",
+      "category": "Costas",
+      "illustrationId": "lat_pulldown",
+      "expected_asset": "ex_lat_pulldown.png",
+      "has_asset": false
+    },
+    {
+      "id": "costas_13",
+      "name": "Puxada Unilateral no Cabo",
+      "category": "Costas",
+      "illustrationId": "lat_pulldown",
+      "expected_asset": "ex_lat_pulldown.png",
+      "has_asset": false
+    },
+    {
+      "id": "costas_14",
+      "name": "Barra Fixa Supinada",
+      "category": "Costas",
+      "illustrationId": "barra_fixa_supinada",
+      "expected_asset": "ex_barra_fixa_supinada.png",
+      "has_asset": false
+    },
+    {
+      "id": "costas_15",
+      "name": "Barra Fixa Neutra",
+      "category": "Costas",
+      "illustrationId": "barra_fixa_neutra",
+      "expected_asset": "ex_barra_fixa_neutra.png",
+      "has_asset": false
+    },
+    {
+      "id": "costas_16",
+      "name": "Levantamento Terra Romeno",
+      "category": "Costas",
+      "illustrationId": "levantamento_terra_romeno",
+      "expected_asset": "ex_levantamento_terra_romeno.png",
+      "has_asset": false
+    },
+    {
+      "id": "costas_17",
+      "name": "Levantamento Terra Sumô",
+      "category": "Costas",
+      "illustrationId": "levantamento_terra_sumo",
+      "expected_asset": "ex_levantamento_terra_sumo.png",
+      "has_asset": false
+    },
+    {
+      "id": "costas_18",
+      "name": "Good Morning",
+      "category": "Costas",
+      "illustrationId": "good_morning",
+      "expected_asset": "ex_good_morning.png",
+      "has_asset": false
+    },
+    {
+      "id": "costas_19",
+      "name": "Hiperextensão Lombar",
+      "category": "Costas",
+      "illustrationId": "hyperextension_bench",
+      "expected_asset": "ex_hyperextension_bench.png",
+      "has_asset": false
+    },
+    {
+      "id": "biceps_5",
+      "name": "Rosca Martelo",
+      "category": "Bíceps",
+      "illustrationId": "hammer_curl",
+      "expected_asset": "ex_hammer_curl.png",
+      "has_asset": false
+    },
+    {
+      "id": "biceps_6",
+      "name": "Rosca Scott com Halteres",
+      "category": "Bíceps",
+      "illustrationId": "preacher_curl",
+      "expected_asset": "ex_preacher_curl.png",
+      "has_asset": false
+    },
+    {
+      "id": "biceps_7",
+      "name": "Rosca no Cabo",
+      "category": "Bíceps",
+      "illustrationId": "rosca_no_cabo",
+      "expected_asset": "ex_rosca_no_cabo.png",
+      "has_asset": false
+    },
+    {
+      "id": "biceps_8",
+      "name": "Rosca Inversa",
+      "category": "Bíceps",
+      "illustrationId": "reverse_barbell_curl",
+      "expected_asset": "ex_reverse_barbell_curl.png",
+      "has_asset": false
+    },
+    {
+      "id": "trapezio_3",
+      "name": "Encolhimento com Barra",
+      "category": "Trapézio",
+      "illustrationId": "dumbbell_shrug",
+      "expected_asset": "ex_dumbbell_shrug.png",
+      "has_asset": false
+    },
+    {
+      "id": "trapezio_4",
+      "name": "Encolhimento no Smith",
+      "category": "Trapézio",
+      "illustrationId": "dumbbell_shrug",
+      "expected_asset": "ex_dumbbell_shrug.png",
+      "has_asset": false
+    },
+    {
+      "id": "ombros_11",
+      "name": "Face Pull",
+      "category": "Ombros",
+      "illustrationId": "cable_face_pull",
+      "expected_asset": "ex_cable_face_pull.png",
+      "has_asset": false
+    },
+    {
+      "id": "trapezio_5",
+      "name": "Remada Alta com Barra",
+      "category": "Trapézio",
+      "illustrationId": "remada_alta_com_barra",
+      "expected_asset": "ex_remada_alta_com_barra.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_12",
+      "name": "Agachamento Frontal",
+      "category": "Pernas",
+      "illustrationId": "barbell_squat",
+      "expected_asset": "ex_barbell_squat.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_13",
+      "name": "Agachamento Goblet",
+      "category": "Pernas",
+      "illustrationId": "barbell_squat",
+      "expected_asset": "ex_barbell_squat.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_14",
+      "name": "Agachamento Hack",
+      "category": "Pernas",
+      "illustrationId": "barbell_squat",
+      "expected_asset": "ex_barbell_squat.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_15",
+      "name": "Agachamento Sumô",
+      "category": "Pernas",
+      "illustrationId": "barbell_squat",
+      "expected_asset": "ex_barbell_squat.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_16",
+      "name": "Agachamento Pistola",
+      "category": "Pernas",
+      "illustrationId": "barbell_squat",
+      "expected_asset": "ex_barbell_squat.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_17",
+      "name": "Leg Press Horizontal",
+      "category": "Pernas",
+      "illustrationId": "leg_press_horizontal",
+      "expected_asset": "ex_leg_press_horizontal.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_18",
+      "name": "Cadeira Flexora",
+      "category": "Pernas",
+      "illustrationId": "seated_leg_curl",
+      "expected_asset": "ex_seated_leg_curl.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_19",
+      "name": "Stiff com Halteres",
+      "category": "Pernas",
+      "illustrationId": "stiff_deadlift",
+      "expected_asset": "ex_stiff_deadlift.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_20",
+      "name": "Elevação Pélvica Unilateral",
+      "category": "Pernas",
+      "illustrationId": "elevacao_pelvica_unilateral",
+      "expected_asset": "ex_elevacao_pelvica_unilateral.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_21",
+      "name": "Afundo Reverso",
+      "category": "Pernas",
+      "illustrationId": "dumbbell_lunge",
+      "expected_asset": "ex_dumbbell_lunge.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_22",
+      "name": "Afundo Caminhando",
+      "category": "Pernas",
+      "illustrationId": "dumbbell_lunge",
+      "expected_asset": "ex_dumbbell_lunge.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_23",
+      "name": "Passada (Step-Up)",
+      "category": "Pernas",
+      "illustrationId": "dumbbell_lunge",
+      "expected_asset": "ex_dumbbell_lunge.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_24",
+      "name": "Avanço Lateral",
+      "category": "Pernas",
+      "illustrationId": "avanco_lateral",
+      "expected_asset": "ex_avanco_lateral.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_25",
+      "name": "Panturrilha em Pé",
+      "category": "Pernas",
+      "illustrationId": "standing_calf_raise",
+      "expected_asset": "ex_standing_calf_raise.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_26",
+      "name": "Panturrilha no Leg Press",
+      "category": "Pernas",
+      "illustrationId": "leg_press_horizontal",
+      "expected_asset": "ex_leg_press_horizontal.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_27",
+      "name": "Panturrilha Unilateral",
+      "category": "Pernas",
+      "illustrationId": "standing_calf_raise",
+      "expected_asset": "ex_standing_calf_raise.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_28",
+      "name": "Agachamento Pendulum",
+      "category": "Pernas",
+      "illustrationId": "barbell_squat",
+      "expected_asset": "ex_barbell_squat.png",
+      "has_asset": false
+    },
+    {
+      "id": "pernas_29",
+      "name": "Cadeira Adutora",
+      "category": "Pernas",
+      "illustrationId": "cadeira_adutora",
+      "expected_asset": "ex_cadeira_adutora.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_4",
+      "name": "Prancha Lateral",
+      "category": "Abdominais",
+      "illustrationId": "prancha_lateral",
+      "expected_asset": "ex_prancha_lateral.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_5",
+      "name": "Prancha com Elevação",
+      "category": "Abdominais",
+      "illustrationId": "prancha_com_elevacao",
+      "expected_asset": "ex_prancha_com_elevacao.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_6",
+      "name": "Crunch na Máquina",
+      "category": "Abdominais",
+      "illustrationId": "crunch_na_maquina",
+      "expected_asset": "ex_crunch_na_maquina.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_7",
+      "name": "Crunch no Cabo",
+      "category": "Abdominais",
+      "illustrationId": "crunch_no_cabo",
+      "expected_asset": "ex_crunch_no_cabo.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_8",
+      "name": "Elevação de Pernas no Solo",
+      "category": "Abdominais",
+      "illustrationId": "elevacao_de_pernas_no_solo",
+      "expected_asset": "ex_elevacao_de_pernas_no_solo.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_9",
+      "name": "Elevação de Pernas na Barra Fixa",
+      "category": "Abdominais",
+      "illustrationId": "elevacao_de_pernas_na_barra_fixa",
+      "expected_asset": "ex_elevacao_de_pernas_na_barra_fixa.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_10",
+      "name": "Elevação de Pernas no Banco Inclinado",
+      "category": "Abdominais",
+      "illustrationId": "elevacao_de_pernas_no_banco_inclinado",
+      "expected_asset": "ex_elevacao_de_pernas_no_banco_inclinado.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_11",
+      "name": "Russian Twist",
+      "category": "Abdominais",
+      "illustrationId": "russian_twist",
+      "expected_asset": "ex_russian_twist.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_12",
+      "name": "Bicicleta no Ar",
+      "category": "Abdominais",
+      "illustrationId": "bicicleta_no_ar",
+      "expected_asset": "ex_bicicleta_no_ar.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_13",
+      "name": "Dead Bug",
+      "category": "Abdominais",
+      "illustrationId": "dead_bug",
+      "expected_asset": "ex_dead_bug.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_14",
+      "name": "Bird Dog",
+      "category": "Abdominais",
+      "illustrationId": "bird_dog",
+      "expected_asset": "ex_bird_dog.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_15",
+      "name": "Rollout com Roda Abdominal",
+      "category": "Abdominais",
+      "illustrationId": "rollout_com_roda_abdominal",
+      "expected_asset": "ex_rollout_com_roda_abdominal.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_16",
+      "name": "Rollout no Cabo",
+      "category": "Abdominais",
+      "illustrationId": "rollout_no_cabo",
+      "expected_asset": "ex_rollout_no_cabo.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_17",
+      "name": "Pallof Press",
+      "category": "Abdominais",
+      "illustrationId": "pallof_press",
+      "expected_asset": "ex_pallof_press.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_18",
+      "name": "Vácuo Abdominal",
+      "category": "Abdominais",
+      "illustrationId": "vacuo_abdominal",
+      "expected_asset": "ex_vacuo_abdominal.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_19",
+      "name": "Hiperextensão Lombar (Core)",
+      "category": "Abdominais",
+      "illustrationId": "hyperextension_bench",
+      "expected_asset": "ex_hyperextension_bench.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_20",
+      "name": "Superman",
+      "category": "Abdominais",
+      "illustrationId": "superman",
+      "expected_asset": "ex_superman.png",
+      "has_asset": false
+    },
+    {
+      "id": "abdominais_21",
+      "name": "Ponte (Glute Bridge)",
+      "category": "Abdominais",
+      "illustrationId": "ponte_glute_bridge",
+      "expected_asset": "ex_ponte_glute_bridge.png",
+      "has_asset": false
+    }
+  ]
+}

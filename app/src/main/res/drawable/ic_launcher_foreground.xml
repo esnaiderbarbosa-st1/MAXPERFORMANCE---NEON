@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Bold geometric M: White body & diagonals -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M27,79 L27,29 L37,29 L54,54 L71.5,28.2 L71.5,44.7 L54,69 L37,44 L37,79 Z" />
+    <!-- Bold geometric M: Vibrant neon blue right leg -->
+    <path
+        android:fillColor="#00B0FF"
+        android:pathData="M71,29 L81,29 L81,79 L71,79 Z" />
+</vector>

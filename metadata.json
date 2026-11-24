@@ -1,0 +1,8 @@
+{
+  "name": "Remix MAXPERFORMANCERUN - V3 - Neon",
+  "description": "Visão Geral\n\nO Max Performance é uma plataforma inteligente de treinamento físico desenvolvida para transformar dados em decisões.\n\nDiferente de aplicativos tradicionais de academia, o Max Performance não tem como foco apenas registrar treinos. Seu objetivo é compreender o estado atual do usuário, analisar sua evolução ao longo do tempo e recomendar ações que aumentem sua performance, reduzam riscos de lesão e melhorem a recuperação.\n\nO treino deixa de ser o centro do sistema e passa a ser uma consequência de um motor inteligente de decisão.\n\nO projeto nasceu como uma ferramenta pessoal para organização de treinos, mas foi concebido desde o início para evoluir para uma plataforma escalável capaz de atender usuários individuais, coaches, academias e redes de academias.\n\nMissão\n\nTransformar dados de saúde e treinamento em recomendações inteligentes que permitam ao usuário treinar melhor, recuperar melhor e evoluir continuamente.\n\nVisão\n\nSer uma plataforma de treinamento adaptativo baseada em dados, capaz de atuar como um treinador digital pessoal.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
