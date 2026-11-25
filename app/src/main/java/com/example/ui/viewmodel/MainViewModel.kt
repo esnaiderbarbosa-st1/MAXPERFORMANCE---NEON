@@ -774,6 +774,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val fastSetWarningMessage = MutableStateFlow<String?>(null)
     private val lastSetCompletionTimes = mutableMapOf<String, Long>()
     val activeExercises = MutableStateFlow<List<WorkoutExercise>>(emptyList())
+    val exerciseProgressionSuggestions = MutableStateFlow<Map<String, com.example.data.repository.LoadProgressionSuggestion>>(emptyMap())
     val isRecalculatingSession = MutableStateFlow(false)
     val currentExerciseIndex = MutableStateFlow(0)
     val workoutDurationSeconds = com.example.services.WorkoutServiceState.workoutDurationSeconds
@@ -1169,14 +1170,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val executionTypeStr = if (isTempo) "TEMPO" else "REPS"
         val defaultReps = if (isTempo) 30 else 10
 
-        val suggestedWeight = com.example.data.repository.ExerciseHistoryRepository.getSuggestedWeightForExercise(
+        val progressionDetails = com.example.data.repository.ExerciseHistoryRepository.getSuggestedLoadDetailsForExercise(
             history = history.value,
             exerciseNameOrId = exercise.id.ifEmpty { exercise.name },
             equipment = exercise.equipment,
             gymProfile = activeGymProfile.value,
             progressionType = "Linear",
+            targetReps = defaultReps,
             userProfile = userProfile.value
         )
+        val suggestedWeight = progressionDetails.suggestedWeightKg
+        if (!isTempo && progressionDetails.progressionApplied && progressionDetails.deltaKg > 0f) {
+            val key = exercise.name.trim().lowercase()
+            if (key.isNotEmpty()) {
+                exerciseProgressionSuggestions.value = exerciseProgressionSuggestions.value + (key to progressionDetails)
+            }
+        }
         
         val exerciseIdInWorkout = "ex_${java.util.UUID.randomUUID()}"
         val setsList = (1..3).map { index ->
@@ -1284,6 +1293,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         com.example.services.WorkoutForegroundService.stopServiceAndClearNotifications(getApplication())
         activeWorkout.value = null
         activeExercises.value = emptyList()
+        exerciseProgressionSuggestions.value = emptyMap()
         workoutFlowState.value = WorkoutFlowState.Finished
         activeScreen.value = AppScreen.CONCLUIDO
     }
@@ -2032,6 +2042,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     completedSteps = listOf("Preparando seu treino", "✓ avaliando recuperação")
                 )
 
+                val computedProgressionSuggestions = mutableMapOf<String, com.example.data.repository.LoadProgressionSuggestion>()
+
                 val resolvedWorkout = if (isRestoredSession) {
                     activeWorkout.value ?: workout
                 } else {
@@ -2044,19 +2056,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         list.map { ex ->
                             val savedRest = getSavedRestTimeForExercise(ex.name, defaultRest)
                             val gymConfig = gymConfigsMap[ex.name]
+                            val targetRepsForEx = ex.sets.firstOrNull()?.reps?.takeIf { it > 0 } ?: 10
 
                             var historicalWeight = 0f
+                            var progressionDetails: com.example.data.repository.LoadProgressionSuggestion? = null
                             try {
-                                historicalWeight = com.example.data.repository.ExerciseHistoryRepository
-                                    .getSuggestedWeightForExercise(
+                                progressionDetails = com.example.data.repository.ExerciseHistoryRepository
+                                    .getSuggestedLoadDetailsForExercise(
                                         history = histValue,
                                         exerciseNameOrId = ex.name.ifEmpty { ex.exerciseId },
                                         equipment = ex.equipment,
                                         gymProfile = activeGym,
                                         progressionType = ex.progressionType,
+                                        targetReps = targetRepsForEx,
                                         isLowerBodyCompound = ex.exerciseType.lowercase().contains("composto") && (ex.category.lowercase().contains("perna") || ex.category.lowercase().contains("glúteo")),
                                         userProfile = userProfile.value
                                     )
+                                historicalWeight = progressionDetails.suggestedWeightKg
                             } catch (e: Exception) {
                                 com.example.services.telemetry.Telemetry.log(
                                     com.example.data.model.TelemetryEventType.ERROR,
@@ -2065,6 +2081,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             }
 
                             val isTempoExercise = ex.executionType.equals("TEMPO", ignoreCase = true)
+                            if (!isTempoExercise && gymConfig?.defaultLoad == null &&
+                                progressionDetails != null && progressionDetails.progressionApplied && progressionDetails.deltaKg > 0f
+                            ) {
+                                val badgeKey = ex.name.trim().lowercase()
+                                if (badgeKey.isNotEmpty()) {
+                                    computedProgressionSuggestions[badgeKey] = progressionDetails
+                                }
+                            }
                             val freshSets = ex.sets.mapIndexed { idx, s ->
                                 val exerciseDefault = com.example.utils.WeightCalculator.defaultStartingWeightForExercise(
                                     ex.name,
@@ -2225,6 +2249,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
                         activeWorkout.value = resolvedWorkout
                         activeExercises.value = freshList
+                        if (!isRestoredSession) {
+                            exerciseProgressionSuggestions.value = computedProgressionSuggestions.toMap()
+                        }
                         currentExerciseIndex.value = 0
                         workoutDurationSeconds.value = 0L
                         isRestTimerActive.value = false
@@ -2263,19 +2290,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (index in currentExs.indices) {
             val oldEx = currentExs[index]
             val newEquip = newExercise.equipment.ifBlank { oldEx.equipment }
-            val resolvedHistoricalWeight = com.example.data.repository.ExerciseHistoryRepository.getSuggestedWeightForExercise(
+            val targetRepsForEx = oldEx.sets.firstOrNull()?.reps?.takeIf { it > 0 } ?: 10
+            val progressionDetails = com.example.data.repository.ExerciseHistoryRepository.getSuggestedLoadDetailsForExercise(
                 history = history.value,
                 exerciseNameOrId = newExercise.name.ifEmpty { newExercise.id },
                 equipment = newEquip,
                 gymProfile = activeGymProfile.value,
+                progressionType = oldEx.progressionType,
+                targetReps = targetRepsForEx,
                 userProfile = userProfile.value
             )
+            val resolvedHistoricalWeight = progressionDetails.suggestedWeightKg
             val fallbackWeight = com.example.utils.WeightCalculator.defaultStartingWeightForExercise(
                 newExercise.name,
                 newEquip,
                 userProfile.value
             )
             val targetWeight = if (resolvedHistoricalWeight > 0f) resolvedHistoricalWeight else fallbackWeight
+            val updatedMap = exerciseProgressionSuggestions.value.toMutableMap()
+            updatedMap.remove(oldEx.name.trim().lowercase())
+            if (progressionDetails.progressionApplied && progressionDetails.deltaKg > 0f) {
+                val newKey = newExercise.name.trim().lowercase()
+                if (newKey.isNotEmpty()) {
+                    updatedMap[newKey] = progressionDetails
+                }
+            }
+            exerciseProgressionSuggestions.value = updatedMap
             val updatedSets = oldEx.sets.map { s ->
                 s.copy(
                     weight = targetWeight,
@@ -2454,6 +2494,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         com.example.services.WorkoutForegroundService.stopServiceAndClearNotifications(getApplication())
         activeWorkout.value = null
         activeExercises.value = emptyList()
+        exerciseProgressionSuggestions.value = emptyMap()
         isPreSessionActive.value = false
         workoutFlowState.value = WorkoutFlowState.Idle
         activeScreen.value = AppScreen.HOME
@@ -3607,6 +3648,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 tickerJob?.cancel()
                 activeWorkout.value = null
                 activeExercises.value = emptyList()
+                exerciseProgressionSuggestions.value = emptyMap()
                 workoutFlowState.value = WorkoutFlowState.Finished
                 activeScreen.value = AppScreen.CONCLUIDO
             }
@@ -3654,6 +3696,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     clearSavedActiveSession()
                     activeWorkout.value = null
                     activeExercises.value = emptyList()
+                    exerciseProgressionSuggestions.value = emptyMap()
                     workoutFlowState.value = WorkoutFlowState.Abandoned
                     showNoSetsDialog.value = false
                     activeScreen.value = AppScreen.HOME
@@ -3749,6 +3792,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         clearSavedActiveSession()
         activeWorkout.value = null
         activeExercises.value = emptyList()
+        exerciseProgressionSuggestions.value = emptyMap()
         workoutFlowState.value = WorkoutFlowState.Abandoned
         activeScreen.value = AppScreen.HOME
         AudioSynth.playTickSound()

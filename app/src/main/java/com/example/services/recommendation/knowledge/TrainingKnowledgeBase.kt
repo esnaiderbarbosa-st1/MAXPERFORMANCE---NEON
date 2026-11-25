@@ -393,6 +393,68 @@ object TrainingKnowledgeBase {
          * Checks whether a ProgressionStrategy with the given ID exists.
          */
         fun exists(id: String): Boolean = list.any { it.id == id }
+
+        /**
+         * Resolves a human-readable or canonical progression label (pt-BR / EN) to a cataloged
+         * [ProgressionStrategy] from this knowledge base.
+         */
+        fun resolveStrategy(progressionType: String): ProgressionStrategy? {
+            val normalized = progressionType.trim().lowercase()
+            if (normalized.isEmpty()) return getById("linear")
+            if (isDeloadMode(normalized) || isMaintenanceOrNonProgressive(normalized)) return null
+
+            val canonicalId = when (normalized) {
+                "linear", "carga", "progressao linear", "progressão linear" -> "linear"
+                "double_progression", "double progression", "progressao dupla", "progressão dupla" -> "double_progression"
+                "reverse_pyramid", "reverse pyramid", "piramide reversa", "pirâmide reversa" -> "reverse_pyramid"
+                "daily_undulating", "daily undulating", "ondulatoria", "ondulatória" -> "daily_undulating"
+                "top_set_back_off", "top set + back-off", "top set" -> "top_set_back_off"
+                "wave_loading", "wave loading" -> "wave_loading"
+                else -> normalized
+            }
+
+            return list.find {
+                it.id.equals(canonicalId, ignoreCase = true) ||
+                    it.name.equals(progressionType.trim(), ignoreCase = true)
+            }
+        }
+
+        fun isDeloadMode(progressionType: String): Boolean {
+            val normalized = progressionType.trim().lowercase()
+            return normalized == "deload" || normalized == "descarregamento"
+        }
+
+        fun isMaintenanceOrNonProgressive(progressionType: String): Boolean {
+            val normalized = progressionType.trim().lowercase()
+            return normalized == "manutencao" ||
+                normalized == "manutenção" ||
+                normalized == "maintenance" ||
+                normalized == "aquecimento" ||
+                normalized == "warmup" ||
+                normalized == "cardio" ||
+                normalized == "alongamento" ||
+                normalized == "stretch"
+        }
+
+        /**
+         * Returns the conservative anti-jump per-session load increment ceiling (kg)
+         * aligned with equipment granularity:
+         * - Halteres / Dumbbells: max +2.0 kg per session
+         * - Barra / Smith: max +2.5 kg per session
+         * - Máquina / Polia / Leg Press: max +5.0 kg per session
+         */
+        fun maxConservativeIncrementKg(equipmentOrCategory: String): Float {
+            val eq = equipmentOrCategory.trim().lowercase()
+            return when {
+                eq.contains("halter") || eq.contains("dumbbell") -> 2.0f
+                eq.contains("máquina") || eq.contains("maquina") || eq.contains("machine") ||
+                    eq.contains("polia") || eq.contains("cabo") || eq.contains("cable") ||
+                    eq.contains("torre") || eq.contains("placa") || eq.contains("leg press") ||
+                    eq.contains("articulad") || eq.contains("anilha") || eq.contains("hack") -> 5.0f
+                eq.contains("barra") || eq.contains("smith") || eq.contains("barbell") -> 2.5f
+                else -> 2.5f
+            }
+        }
     }
 
     /**

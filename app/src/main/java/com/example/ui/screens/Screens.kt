@@ -3436,6 +3436,7 @@ private fun PlayerScreenContent(viewModel: MainViewModel, gymFontScale: Float) {
 
     val isPreSessionActive by viewModel.isPreSessionActive.collectAsState()
     val customExList by viewModel.customExercises.collectAsState()
+    val progressionSuggestions by viewModel.exerciseProgressionSuggestions.collectAsState()
 
     val combinedExercises = remember(customExList) {
         val defaultList = com.example.constants.TemplatesAndExercises.ALL_EXERCISES
@@ -7092,13 +7093,23 @@ private fun PlayerScreenContent(viewModel: MainViewModel, gymFontScale: Float) {
                 }
             }
 
-            // "Séries Eficazes" header em linha única limpa (Auto-Center ativo por padrão)
+            // "Séries Eficazes" header em linha única limpa + badge discreto de progressão conservadora sugerida
             item {
+                val exProgressionSuggestion = progressionSuggestions[currentEx.name.trim().lowercase()]
+                val currentWorkingWeight = currentEx.sets.firstOrNull { !it.completed }?.weight
+                    ?: currentEx.sets.firstOrNull()?.weight
+                    ?: 0f
+                val showProgressionBadge = exProgressionSuggestion != null &&
+                    exProgressionSuggestion.progressionApplied &&
+                    exProgressionSuggestion.deltaKg > 0f &&
+                    currentWorkingWeight > exProgressionSuggestion.previousWeightKg
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 4.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
                         text = "Séries Eficazes",
@@ -7109,6 +7120,38 @@ private fun PlayerScreenContent(viewModel: MainViewModel, gymFontScale: Float) {
                         softWrap = false,
                         overflow = TextOverflow.Ellipsis
                     )
+
+                    if (showProgressionBadge && exProgressionSuggestion != null) {
+                        val deltaFormatted = com.example.utils.WeightCalculator.formatStepNumber(exProgressionSuggestion.deltaKg)
+                        Surface(
+                            color = Success.copy(alpha = 0.14f),
+                            shape = RoundedCornerShape(50),
+                            border = BorderStroke(1.dp, Success.copy(alpha = 0.42f)),
+                            modifier = Modifier.testTag("progression_suggestion_badge")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.TrendingUp,
+                                    contentDescription = "Progressão conservadora de carga sugerida",
+                                    tint = Success,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    text = "+$deltaFormatted kg sugerido",
+                                    color = Success,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    style = LocalTextStyle.current.copy(fontFeatureSettings = "tnum"),
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
+                        }
+                    }
                 }
             }
 

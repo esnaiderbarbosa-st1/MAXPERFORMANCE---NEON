@@ -1,12 +1,23 @@
 package com.example.data.repository
 
 import android.util.Log
+import com.example.data.model.GymExerciseRecord
 import com.example.data.model.GymProfile
 import com.example.data.model.WorkoutExercise
 import com.example.data.model.WorkoutHistoryEntry
 import com.example.services.domain.PerformanceEngine
+import com.example.services.recommendation.knowledge.TrainingKnowledgeBase
 import com.example.utils.JsonUtils
 import com.example.utils.WeightCalculator
+
+data class LoadProgressionSuggestion(
+    val suggestedWeightKg: Float,
+    val previousWeightKg: Float,
+    val deltaKg: Float,
+    val progressionApplied: Boolean,
+    val strategyId: String,
+    val reason: String
+)
 
 object ExerciseHistoryRepository {
     private const val TAG = "ExerciseHistoryRepo"
@@ -37,6 +48,11 @@ object ExerciseHistoryRepository {
     fun getAiRepsOverride(exerciseName: String): Int? {
         val key = exerciseName.trim().lowercase()
         return aiSuggestedRepsOverrides[key]
+    }
+
+    fun clearAiOverrides() {
+        aiSuggestedWeightOverrides.clear()
+        aiSuggestedRepsOverrides.clear()
     }
 
     fun clearCache() {
@@ -155,7 +171,8 @@ object ExerciseHistoryRepository {
      * 3) Average of recent sessions (Média das últimas sessões)
      * 4) Equipment default starting weight (Carga padrão apenas se não houver histórico)
      *
-     * After identifying the base weight, applies configured progression and rounds to equipment/gym profile.
+     * After identifying the base weight, applies conservative automatic progression aligned with
+     * [TrainingKnowledgeBase.ProgressionStrategies] when all sets in the latest valid session hit [targetReps].
      */
     fun getSuggestedWeightForExercise(
         history: List<WorkoutHistoryEntry>,
@@ -167,6 +184,32 @@ object ExerciseHistoryRepository {
         isLowerBodyCompound: Boolean = false,
         userProfile: com.example.data.model.UserProfileData? = WeightCalculator.activeUserProfile
     ): Float {
+        return getSuggestedLoadDetailsForExercise(
+            history = history,
+            exerciseNameOrId = exerciseNameOrId,
+            equipment = equipment,
+            gymProfile = gymProfile,
+            progressionType = progressionType,
+            targetReps = targetReps,
+            isLowerBodyCompound = isLowerBodyCompound,
+            userProfile = userProfile
+        ).suggestedWeightKg
+    }
+
+    /**
+     * Resolves both the suggested load and structured progression metadata (previous weight,
+     * conservative delta, strategy ID and reason) for UI display and unit testing.
+     */
+    fun getSuggestedLoadDetailsForExercise(
+        history: List<WorkoutHistoryEntry>,
+        exerciseNameOrId: String,
+        equipment: String = "Barra",
+        gymProfile: GymProfile? = null,
+        progressionType: String = "Linear",
+        targetReps: Int = 10,
+        isLowerBodyCompound: Boolean = false,
+        userProfile: com.example.data.model.UserProfileData? = WeightCalculator.activeUserProfile
+    ): LoadProgressionSuggestion {
         val effectiveEquipment = if (equipment.isBlank() || equipment.equals("Outros", ignoreCase = true)) {
             WeightCalculator.inferEquipment(exerciseNameOrId, equipment)
         } else {
@@ -177,13 +220,20 @@ object ExerciseHistoryRepository {
             WeightCalculator.isPerDumbbellWeight(null, exerciseNameOrId, effectiveEquipment)
 
         if (WeightCalculator.isBodyweightExercise(null, exerciseNameOrId, effectiveEquipment)) {
-            return 0f
+            return LoadProgressionSuggestion(
+                suggestedWeightKg = 0f,
+                previousWeightKg = 0f,
+                deltaKg = 0f,
+                progressionApplied = false,
+                strategyId = "bodyweight",
+                reason = "Exercício de peso corporal"
+            )
         }
 
         val validSessions = getValidSessionsForExercise(history, exerciseNameOrId, maxSessions = 8)
 
         // Também consulta o GymHistoryRepository (relatórios detalhados de campo) para garantir a última carga real consolidada
-        val gymSessionLastWeight: Float = runCatching {
+        val matchedGymSession: Pair<Long, GymExerciseRecord>? = runCatching {
             val qLower = exerciseNameOrId.trim().lowercase()
             val qIsDumbbell = qLower.contains("halter") || qLower.contains("dumbbell") || isDumbbellEx
             val qIsPlateLoaded = qLower.contains("anilha") || qLower.contains("total health") || qLower.contains("articulad")
@@ -210,10 +260,19 @@ object ExerciseHistoryRepository {
                             (searchNorm.length >= 4 && exNorm.length >= 4 &&
                                 (exNorm == searchNorm || exNorm.contains(searchNorm) || searchNorm.contains(exNorm)))
                     }
-                    matchedEx?.sets?.lastOrNull { it.completed && it.weight > 0f }?.weight
-                        ?: matchedEx?.sets?.filter { it.completed && it.weight > 0f }?.maxOfOrNull { it.weight }
-                } ?: 0f
-        }.getOrDefault(0f)
+                    if (matchedEx != null && matchedEx.sets.any { it.completed && it.weight > 0f }) {
+                        Pair(gs.date, matchedEx)
+                    } else {
+                        null
+                    }
+                }
+        }.getOrNull()
+
+        val gymSessionLastWeight: Float = matchedGymSession?.second?.let { matchedEx ->
+            matchedEx.sets.lastOrNull { it.completed && it.weight > 0f }?.weight
+                ?: matchedEx.sets.filter { it.completed && it.weight > 0f }.maxOfOrNull { it.weight }
+                ?: 0f
+        } ?: 0f
 
         val defaultWeight = WeightCalculator.defaultStartingWeightForExercise(exerciseNameOrId, effectiveEquipment, userProfile)
 
@@ -225,9 +284,10 @@ object ExerciseHistoryRepository {
             ?: 0f
 
         val roomLastDate = validSessions.firstOrNull()?.first?.date ?: 0L
-        val gymLastDate = GymHistoryRepository.sessions.value.firstOrNull()?.date ?: 0L
+        val gymLastDate = matchedGymSession?.first ?: 0L
+        val useGymAsMostRecent = gymSessionLastWeight > 0f && (roomLastWeight <= 0f || gymLastDate >= roomLastDate)
         val rawLastCompletedSetWeight = when {
-            gymSessionLastWeight > 0f && (roomLastWeight <= 0f || gymLastDate >= roomLastDate) -> gymSessionLastWeight
+            useGymAsMostRecent -> gymSessionLastWeight
             roomLastWeight > 0f -> roomLastWeight
             else -> 0f
         }
@@ -254,9 +314,25 @@ object ExerciseHistoryRepository {
                         (lastCompletedSetWeight - maxStepKg).coerceAtLeast(2.0f),
                         lastCompletedSetWeight + maxStepKg
                     )
-                    return (kotlin.math.round(clampedAi * 10f) / 10f).coerceAtLeast(0f)
+                    val roundedAi = (kotlin.math.round(clampedAi * 10f) / 10f).coerceAtLeast(0f)
+                    return LoadProgressionSuggestion(
+                        suggestedWeightKg = roundedAi,
+                        previousWeightKg = lastCompletedSetWeight,
+                        deltaKg = (kotlin.math.round((roundedAi - lastCompletedSetWeight) * 10f) / 10f).coerceAtLeast(0f),
+                        progressionApplied = false,
+                        strategyId = "ai_override",
+                        reason = "Ajuste de carga definido pela análise IA"
+                    )
                 }
-                return WeightCalculator.roundToAvailableWeight(safeAiWeight, effectiveEquipment, gymProfile)
+                val roundedAi = WeightCalculator.roundToAvailableWeight(safeAiWeight, effectiveEquipment, gymProfile)
+                return LoadProgressionSuggestion(
+                    suggestedWeightKg = roundedAi,
+                    previousWeightKg = 0f,
+                    deltaKg = 0f,
+                    progressionApplied = false,
+                    strategyId = "ai_override",
+                    reason = "Carga inicial sugerida pela análise IA"
+                )
             }
         }
 
@@ -267,7 +343,15 @@ object ExerciseHistoryRepository {
             } else {
                 defaultWeight
             }
-            return WeightCalculator.roundToAvailableWeight(safeDefault, effectiveEquipment, gymProfile)
+            val roundedDefault = WeightCalculator.roundToAvailableWeight(safeDefault, effectiveEquipment, gymProfile)
+            return LoadProgressionSuggestion(
+                suggestedWeightKg = roundedDefault,
+                previousWeightKg = 0f,
+                deltaKg = 0f,
+                progressionApplied = false,
+                strategyId = "default",
+                reason = "Carga inicial biométrica (sem histórico)"
+            )
         }
 
         // Priority 2: Best recent set across the up to 8 valid sessions
@@ -316,20 +400,126 @@ object ExerciseHistoryRepository {
             else -> Triple(defaultWeight, false, "P4_Default")
         }
 
-        // TRAVA ANTI-SALTO: Preserva exatamente a última carga consolidada do histórico (ex: 61 kg na Cadeira Extensora ou 22 kg no Supino Inclinado com Halteres).
-        // Só reduz em caso explícito de Deload; a progressão fica a cargo do atleta ou de 1 incremento físico validado (máx +2 kg por halter).
-        val finalWeight = if (isFromHistory) {
-            when (progressionType.lowercase()) {
-                "descarregamento", "deload" -> WeightCalculator.roundToAvailableWeight(baseWeight * 0.90f, effectiveEquipment, gymProfile)
-                else -> (kotlin.math.round(baseWeight * 10f) / 10f).coerceAtLeast(0f)
-            }
-        } else {
+        if (!isFromHistory) {
             val cappedBase = if (isDumbbellEx) baseWeight.coerceAtMost(WeightCalculator.MAX_INITIAL_SINGLE_DUMBBELL_KG) else baseWeight
-            WeightCalculator.roundToAvailableWeight(cappedBase, effectiveEquipment, gymProfile)
+            val roundedDefault = WeightCalculator.roundToAvailableWeight(cappedBase, effectiveEquipment, gymProfile)
+            return LoadProgressionSuggestion(
+                suggestedWeightKg = roundedDefault,
+                previousWeightKg = 0f,
+                deltaKg = 0f,
+                progressionApplied = false,
+                strategyId = "default",
+                reason = "Carga inicial padrão"
+            )
         }
 
-        Log.d(TAG, "Historical load resolved for '$exerciseNameOrId': Level=$levelText, BaseWeight=$baseWeight kg -> FinalWeight=$finalWeight kg")
-        return finalWeight
+        val normalizedBase = (kotlin.math.round(baseWeight * 10f) / 10f).coerceAtLeast(0f)
+
+        // Regra explícita de Deload (-10% arredondado ao equipamento)
+        if (TrainingKnowledgeBase.ProgressionStrategies.isDeloadMode(progressionType)) {
+            val deloadWeight = WeightCalculator.roundToAvailableWeight(baseWeight * 0.90f, effectiveEquipment, gymProfile)
+            Log.d(TAG, "Historical load resolved for '$exerciseNameOrId': Level=$levelText, BaseWeight=$normalizedBase kg -> Deload=$deloadWeight kg")
+            return LoadProgressionSuggestion(
+                suggestedWeightKg = deloadWeight,
+                previousWeightKg = normalizedBase,
+                deltaKg = 0f,
+                progressionApplied = false,
+                strategyId = "deload",
+                reason = "Redução estruturada de deload (-10%)"
+            )
+        }
+
+        // Modos não progressivos (Manutenção, Aquecimento, Cardio, Alongamento)
+        if (TrainingKnowledgeBase.ProgressionStrategies.isMaintenanceOrNonProgressive(progressionType)) {
+            Log.d(TAG, "Historical load resolved for '$exerciseNameOrId': Level=$levelText, BaseWeight=$normalizedBase kg -> Maintained (non-progressive mode)")
+            return LoadProgressionSuggestion(
+                suggestedWeightKg = normalizedBase,
+                previousWeightKg = normalizedBase,
+                deltaKg = 0f,
+                progressionApplied = false,
+                strategyId = "maintenance",
+                reason = "Carga mantida pelo modo $progressionType"
+            )
+        }
+
+        // Progressão automática conservadora alinhada à TrainingKnowledgeBase:
+        // Exige que TODAS as séries da última sessão válida tenham sido concluídas atingindo targetReps.
+        val resolvedStrategy = TrainingKnowledgeBase.ProgressionStrategies.resolveStrategy(progressionType)
+        val safeTargetReps = targetReps.coerceAtLeast(1)
+        val latestSessionMeetsCriteria = if (levelText == "P1_LastSet") {
+            if (useGymAsMostRecent) {
+                val gymSets = matchedGymSession?.second?.sets.orEmpty()
+                gymSets.isNotEmpty() && gymSets.all { it.completed && it.weight > 0f && it.reps >= safeTargetReps }
+            } else {
+                val roomSets = mostRecentExercise?.sets.orEmpty()
+                roomSets.isNotEmpty() && roomSets.all { it.completed && it.weight > 0f && it.reps >= safeTargetReps }
+            }
+        } else {
+            false
+        }
+
+        if (resolvedStrategy != null && latestSessionMeetsCriteria && normalizedBase > 0f) {
+            val detailedCategory = WeightCalculator.inferDetailedEquipmentCategory(exerciseNameOrId, effectiveEquipment)
+            val ceilingEquipmentHint = if (isDumbbellEx) "Halteres" else "$effectiveEquipment $detailedCategory"
+            val maxCeilingKg = TrainingKnowledgeBase.ProgressionStrategies.maxConservativeIncrementKg(ceilingEquipmentHint)
+
+            val equipmentStep = WeightCalculator.getSavedWeightStep(
+                context = null,
+                exerciseName = exerciseNameOrId,
+                fallbackEquipment = effectiveEquipment,
+                currentWeight = normalizedBase
+            ).coerceIn(0.5f, maxCeilingKg)
+
+            val rawProgressed = normalizedBase + equipmentStep
+            val roundedCandidate = WeightCalculator.roundToAvailableWeight(rawProgressed, effectiveEquipment, gymProfile)
+
+            // Teto rígido anti-salto: garante que o arredondamento nunca exceda 1 degrau conservador nem o teto da categoria
+            val safeProgressedWeight = when {
+                roundedCandidate - normalizedBase > maxCeilingKg + 0.001f -> {
+                    if (isDumbbellEx && normalizedBase >= 10f) {
+                        val maxAllowedInt = kotlin.math.floor((normalizedBase + maxCeilingKg).toDouble()).toInt()
+                        val evenCap = if (maxAllowedInt % 2 != 0) maxAllowedInt - 1 else maxAllowedInt
+                        evenCap.toFloat().coerceAtLeast(normalizedBase + 1.0f)
+                    } else {
+                        (kotlin.math.round((normalizedBase + maxCeilingKg) * 10f) / 10f)
+                    }
+                }
+                roundedCandidate <= normalizedBase -> {
+                    (kotlin.math.round(rawProgressed * 10f) / 10f)
+                }
+                else -> {
+                    (kotlin.math.round(roundedCandidate * 10f) / 10f)
+                }
+            }.coerceAtMost(kotlin.math.round((normalizedBase + maxCeilingKg) * 10f) / 10f)
+
+            val finalDelta = (kotlin.math.round((safeProgressedWeight - normalizedBase) * 10f) / 10f).coerceAtLeast(0f)
+
+            Log.d(
+                TAG,
+                "Conservative progression applied for '$exerciseNameOrId': Strategy=${resolvedStrategy.id}, " +
+                    "Base=$normalizedBase kg -> Suggested=$safeProgressedWeight kg (+$finalDelta kg, cap=$maxCeilingKg kg)"
+            )
+
+            return LoadProgressionSuggestion(
+                suggestedWeightKg = safeProgressedWeight,
+                previousWeightKg = normalizedBase,
+                deltaKg = finalDelta,
+                progressionApplied = finalDelta > 0f,
+                strategyId = resolvedStrategy.id,
+                reason = "Todas as séries atingiram $safeTargetReps+ reps (${resolvedStrategy.name})"
+            )
+        }
+
+        Log.d(TAG, "Historical load preserved for '$exerciseNameOrId': Level=$levelText, BaseWeight=$normalizedBase kg (progression criteria not met)")
+        return LoadProgressionSuggestion(
+            suggestedWeightKg = normalizedBase,
+            previousWeightKg = normalizedBase,
+            deltaKg = 0f,
+            progressionApplied = false,
+            strategyId = resolvedStrategy?.id ?: "maintained",
+            reason = "Carga anterior mantida (critério de repetições não atingido em todas as séries)"
+        )
     }
 }
+
 
