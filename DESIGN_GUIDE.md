@@ -1,84 +1,90 @@
-# MAX PERFORMANCE — Manual de Identidade Visual, Arquitetura UI & Fórmulas
-**Versão Atualizada:** 2026.10 (Paleta Unificada Dark Neutro + Azul/Ciano `#00B0FF` / `#00E5FF`)
+# MAX PERFORMANCE — Guia de Design (MAX V3 Neon)
 
-Este documento consolida a identidade visual oficial do **MAX PERFORMANCE (MAX GYM & MAX RUN)**, as modificações estruturais recentes, as **Regras de Ouro** de layout e estado, a escala tipográfica e as fórmulas matemáticas/fisiológicas do aplicativo.
+Documento de referência visual e de interface do **MAX PERFORMANCE**, alinhado exclusivamente ao código atual em Jetpack Compose (Material Design 3).
 
-> Para a documentação funcional e fisiológica expandida de todos os módulos, consulte também o arquivo [`MANUAL_MESTRE_MAX_PERFORMANCE.md`](./MANUAL_MESTRE_MAX_PERFORMANCE.md).
-
----
-
-## 🎨 1. Guia de Estilo de Cores (`Color.kt` & `RunColors.kt`)
-
-### 1.1. Camada Atmosférica Dark Neutra
-*   **Fundo Principal (`BackgroundStart` $\rightarrow$ `BackgroundEnd`):** `#0D0F14` $\rightarrow$ `#11151D`
-*   **Superfícies de Cards (`GraphiteSurface` / `Surface`):** `#161922` com degradê interno sutil (`#161922` $\rightarrow$ `#11151D`)
-*   **Pílulas e Containers Secundários (`SecondaryElement`):** `#1E2430`
-*   **Bordas e Divisores (`BorderColor`):** `#262B38` (`1.dp`) + **Borda Especular Iluminada (`warmSpecularRimBorder`)** em Ciano `#00E5FF` (`alpha = 0.28f` no topo esquerdo decaindo para `0.04f` na base direita)
-
-### 1.2. Paleta de Acento Oficial & Semântica Fisiológica
-*   **Primária Oficial (Azul Max Performance):** `#00B0FF` (`Primary` / `MaxOrange`)
-    *   *Uso:* Botões principais (`INICIAR TREINO`, `REGISTRAR SÉRIE`, `IR PARA CORRIDA DE HOJE`), linha da série ativa (`S1`), badges de grupamento muscular e indicadores de foco.
-*   **Secundária / Brilho Ciano (`Secondary` / `CopperRimLight`):** `#00E5FF`
-    *   *Uso:* Degradês de volume (`#00E5FF` $\rightarrow$ `#00B0FF`), telemetria de corrida, lupa de miniatura e destaques ativos nos modais `[ CARGAS ]`, `[ DESCANSO ]` e `[ ANÁLISES ]`.
-*   **Sucesso / Série Concluída (`Success`):** `#34C759` / `#00E676`
-    *   *Uso:* Séries finalizadas, selo `✓` no Cronograma 7 Dias e status muscular 100% recuperado.
-*   **Alerta Fisiológico / Frequência Cardíaca (`Error` / `alert`):** `#FF4444` / `#FF5252`
-    *   *Uso:* Exclusivo para a pílula de batimentos cardíacos (`♥ BPM`), alertas de dor/falha e ações destrutivas.
-*   **Destaque Especial (`PremiumColor`):** `#AF52DE` (Roxo elétrico para conquistas e análises avançadas)
-
-### 1.3. Hierarquia de Textos Neutros
-*   **Texto Primário (`TextPrimary`):** `#FFFFFF` / `#F8FAFC`
-*   **Texto Secundário (`TextSecondary`):** `#94A3B8` (Slate suave para subtítulos e descrições)
-*   **Texto Terciário (`TextTertiary`):** `#64748B` (Slate médio para metadados e legendas)
-*   **Texto Desabilitado (`TextDisabled`):** `#475569`
+Para arquitetura técnica, banco de dados Room, backup, exportações e regras de engenharia, consulte `MANUAL_MESTRE_MAX_PERFORMANCE.md`.
 
 ---
 
-## 🔤 2. Tipografia, Tamanhos (`sp`) e Dimensões (`dp`)
+## 1. Identidade Visual — MAX V3 Neon
+
+O aplicativo adota estética dark de alto contraste (**MAX V3 Neon**) com superfícies neutras escuras, acentos em azul elétrico e ciano neon, e semântica estrita por cor.
+
+### 1.1. Paleta de Cores
+
+| Papel | Hex | Uso no Aplicativo |
+| :--- | :--- | :--- |
+| Fundo Obsidian (ícone e camadas profundas) | `#070B14` | Fundo do ícone adaptativo V3 Neon e superfícies profundas |
+| Fundo Principal (`BackgroundStart` / `RunColors.bg`) | `#0D0F14` | Background padrão de telas e containers raiz |
+| Fundo Secundário (`BackgroundEnd`) | `#11151D` | Degradê de fundo e base inferior de cards |
+| Superfície de Cards (`GraphiteSurface` / `RunColors.surface`) | `#161922` | Cards de treino, histórico, atividades recentes e painéis |
+| Container Secundário (`SecondaryElement`) | `#1E2430` | Chips, pílulas e campos secundários |
+| Borda Padrão (`BorderColor` / `RunColors.border`) | `#262B38` | Divisores e contornos sutis (`1.dp`) |
+| Acento Primário — Azul Elétrico (`Primary` / `RunColors.brand`) | `#00B0FF` / `#2563EB` | Botões CTA principais, foco ativo, navegação e identidade |
+| Acento Secundário — Ciano Neon (`Secondary` / `RunColors.brandText`) | `#00D4FF` / `#00E5FF` | Brilho especular (`warmSpecularRimBorder`), telemetria, indicadores ativos e ícone V3 Neon |
+| Classificação de Prova (Âmbar) | `#F59E0B` | Padrão único e exclusivo para badge `PROVA` e borda de destaque de corridas classificadas como Prova |
+| Sucesso / Concluído (`Success` / `RunColors.success`) | `#34C759` / `#00E676` | Séries concluídas, dias cumpridos, fase de caminhada e status recuperado |
+| Alerta / Frequência Cardíaca (`Error` / `RunColors.alert`) | `#FF4444` / `#FF5252` | Batimentos cardíacos (BPM), alertas críticos de GPS/dor e ações destrutivas |
+| Texto Primário (`TextPrimary` / `RunColors.textPrimary`) | `#FFFFFF` / `#F8FAFC` | Títulos, métricas principais e rótulos ativos |
+| Texto Secundário (`TextSecondary`) | `#94A3B8` | Subtítulos, datas e descrições |
+| Texto Terciário (`TextTertiary`) | `#64748B` | Metadados discretos e legendas auxiliares |
+
+### 1.2. Política Zero Emojis
+
+- Não utilizar emojis do sistema operacional em títulos, botões, badges, modais, rótulos ou notificações de interface.
+- Toda sinalização visual deve usar ícones vetoriais do Material Symbols (`Icons.Default.*` e `Icons.AutoMirrored.*`) ou vetores customizados em XML/Canvas.
+
+---
+
+## 2. Tipografia, Densidade e Escala `Aa+ 120%`
 
 ### 2.1. Escala Tipográfica (`Type.kt`)
-*   **Família Principal:** `FontFamily.SansSerif` (pesos `Medium`, `Bold`, `ExtraBold` e `Black`)
-*   **Família Numérica/Cronômetros:** `FontFamily.Monospace`
-*   **Proteção de Escala:** `fontScale = 1.0f` fixado globalmente em `MainActivity.kt` para evitar que configurações de fonte grande do sistema quebrem pílulas e cabeçalhos.
 
-| Token / Componente | Tamanho (`sp`) | Line Height (`sp`) | Peso (`FontWeight`) | Uso no App |
-| :--- | :---: | :---: | :---: | :--- |
-| **`displayLarge`** | `32.sp` | `38.sp` | `Black (900)` | HUD de Corrida, Pace e Cronômetro central |
-| **`displayMedium`** | `24.sp` | `30.sp` | `Black (900)` | Títulos de destaque e métricas principais |
-| **Saudação da Home** | `23.sp` | `28.sp` | `Black (900)` | Título `"Olá, Atleta"` na Home |
-| **`titleLarge` / Hero Title** | `20.sp`–`22.sp` | `26.sp` | `Bold` / `Black` | Título principal do Hero Card e cabeçalhos |
-| **`bodyLarge`** | `16.sp` | `24.sp` | `Normal (400)` | Descrições gerais e orientações do Coach |
-| **`bodyMedium` / Botões CTA** | `13.sp`–`14.sp` | `20.sp` | `Medium` / `ExtraBold` | Botões de ação (`Iniciar treino`, `Trocar treino`) |
-| **`labelMedium`** | `12.sp` | `16.sp` | `Bold (700)` | Títulos de seção (`CRONOGRAMA 7 DIAS`), pílulas |
-| **`labelSmall`** | `11.sp` | `16.sp` | `Medium` / `Bold` | Legenda do mapa de sprints (`maxLines = 1`), subtítulos |
-| **Micro-Badges** | `9.5.sp`–`10.sp`| `12.sp` | `ExtraBold (800)` | Badge `"INTERCALAÇÃO HÍBRIDA • CORRIDA"` |
+- Família principal: `FontFamily.SansSerif` (`displayLarge` 32sp Black, `displayMedium` 24sp Black, `titleLarge` 20sp Bold, `bodyLarge` 16sp Normal, `bodyMedium` 14sp Medium, `labelMedium` 12sp Bold, `labelSmall` 11sp Medium).
+- Números de cronômetro, pace e telemetria utilizam `FontFamily.Monospace` ou `fontFeatureSettings = "tnum"` para evitar jitter horizontal.
 
-### 2.2. Dimensões Críticas de Layout (`dp`)
-*   **Escala Global de Tela (`MainActivity.kt`):** Largura base de referência `411.dp` (`targetScale = (screenWidthDp / 411f).coerceIn(0.82f, 1.15f)`).
-*   **Hero Card (Capa Superior):** `165.dp` de altura, permitindo que o Hero Card + `CRONOGRAMA 7 DIAS (SEG A DOM)` caibam integralmente na primeira dobra da tela.
-*   **Botão Principal do Hero Card:** `42.dp` de altura com `RoundedCornerShape(12.dp)`.
-*   **Card Diário do Cronograma Semanal (`CalendarDayPillCard`):** `78.dp` de altura.
-*   **Alvo Mínimo de Toque WCAG:** `48.dp x 48.dp`.
+### 2.2. Suporte Obrigatório à Escala `Aa+ 120%`
+
+- Em `MainActivity.kt`, a densidade base adapta smartphones pela largura de referência de `411.dp` (`targetScale` entre `0.82f` e `1.15f`) com `fontScale = 1.0f` no container raiz; tablets (`>= 600.dp`) usam `targetScale = 1.0f` com largura máxima de `840.dp`.
+- Sobre essa base, o módulo de corrida oferece controle explícito de escala de fonte (`RunFontScaleManager` + `ProvideRunFontScale` + botão `Aa+`) com 3 níveis persistidos: `100%` (`1.00f`), **`120%` (`1.20f`)** e `135%` (`1.35f`), sem multiplicação aninhada (`LocalBaseRunFontScale`). O próprio controle `Aa+` permanece em `1.0f` para preservar o cabeçalho.
+- O player de musculação (`FlowStatePlayerComponents`) também suporta ajuste dedicado de escala entre `85%` e `140%`.
+- **Regra obrigatória de layout:** todo card, chip, cabeçalho e modal deve ser validado com `Aa+ 120%` ativo — sem sobreposição de texto, sem corte de pace/data e respeitando alvo mínimo de toque de `48.dp`.
 
 ---
 
-## 🏆 3. Regras de Ouro de Engenharia e UX
+## 3. Padrões de Layout e Componentes
 
-1.  **Unificação Azul/Ciano & Preservação Fisiológica:** Nenhum componente do Player de Musculação deve usar o laranja legado; toda ação ativa usa `#00B0FF`/`#00E5FF`, mantendo o Vermelho para `♥ BPM`/falha e o Verde para séries concluídas (`✓`).
-2.  **Sincronia Absoluta Hero Card $\leftrightarrow$ Cronograma 7 Dias:** O card `"HOJE"` na barra semanal (`SEG A DOM`) reflete em tempo real o item ativo do Hero Card, respeitando a intercalação híbrida de 48h pós-Full Body.
-3.  **Alinhamento Rígido de Botões e Pílulas:** Botões lado a lado utilizam `Modifier.height(IntrinsicSize.Min)` na `Row` e `Modifier.fillMaxHeight()` nos botões filhos, com `maxLines = 1`, `softWrap = false` e `TextOverflow.Ellipsis`.
-4.  **Respeito às System Bars (`Edge-to-Edge`):** Telas cheias e modais de mapa (`MAPA INTERATIVO POR SPRINTS`) aplicam `statusBarsPadding()` e `navigationBarsPadding()` para nunca esconder botões atrás da barra de navegação do Android.
-5.  **Imutabilidade de Séries Concluídas:** Recálculos de fadiga ou trocas de equipamento no meio do treino jamais alteram o peso ou as repetições de séries já marcadas como concluídas.
+### 3.1. Modais em 3 Zonas com Rodapé Fixo
+
+Modais extensos ou com formulários/seletores (como o modal **Configuração da Corrida**) seguem obrigatoriamente a arquitetura em 3 zonas:
+
+1. **Zona 1 — Cabeçalho Fixo:** título claro e botão de fechar (`X`) com área de toque >= `48.dp`, sempre visível no topo.
+2. **Zona 2 — Corpo Rolável:** container intermediário com `Modifier.weight(1f, fill = false)` e rolagem interna (`verticalScroll` ou `LazyColumn`), evitando grandes espaços vazios entre seções e impedindo cortes quando `Aa+ 120%` estiver ativo.
+3. **Zona 3 — Rodapé Fixo:** ação primária de confirmação explícita sempre ancorada na base, respeitando `navigationBarsPadding()` em layout Edge-to-Edge.
+
+### 3.2. Cards de Atividades Recentes e Histórico de Corridas
+
+Os cards de corrida seguem um padrão visual unificado entre a aba Início (**Atividades recentes**) e o **Histórico**:
+
+- **Padrão único de Prova:** corridas classificadas como Prova (via modal Treino/Prova, tipo `RACE_5K`/`RACE_10K` ou vínculo legado em `OfficialRaceRecord`) exibem exclusivamente o badge esquerdo âmbar (`#F59E0B`) com rótulo `PROVA` e borda âmbar sutil no card. Badges duplicados à direita ou no rodapé são proibidos.
+- **Alinhamento vertical por badge fixo:** em Atividades Recentes, o badge da esquerda (`PROVA`, `LIVRE`, `5K`, etc.) possui largura fixa de **`66.dp`**, centralizado e com `maxLines = 1`, garantindo alinhamento vertical uniforme da coluna de títulos entre todos os cards.
+- **Distribuição em duas linhas sem truncamento:**
+  - **Linha 1:** título da sessão à esquerda (`maxLines = 1`, `TextOverflow.Ellipsis`) e data compacta (`dd.MM.yy`) ancorada à direita.
+  - **Linha 2:** métricas limpas no formato `distância · duração · pace`, liberando largura horizontal suficiente para evitar cortes mesmo em `Aa+ 120%`.
+- **Coerência de título para Provas:** quando uma corrida genérica (ex.: `"Corrida Livre"`) é classificada como Prova sem nome personalizado (`raceName` vazio), o título exibido passa a ser `"Prova"` (evitando a contradição `PROVA` + `"Corrida Livre"`). Ao desmarcar de volta para Treino, o título original (`"Corrida Livre"`) é restaurado.
+
+### 3.3. Edge-to-Edge e Navegação
+
+- `enableEdgeToEdge()` com status bar e navigation bar escuras transparentes.
+- Telas cheias, overlays de mapa e rodapés de modais aplicam `statusBarsPadding()` e `navigationBarsPadding()` para não colidir com as barras do sistema.
 
 ---
 
-## 🧮 4. Resumo das Fórmulas Principais
+## 4. Ícone do Launcher — MAX V3 Neon
 
-*   **Escala de Densidade Responsiva:** $\text{scale} = \text{clamp}(\text{screenWidthDp} / 411.0,\ 0.82,\ 1.15)$
-*   **Conversão Libras $\rightarrow$ Quilogramas:** $W_{\text{kg}} = W_{\text{lbs}} \times 0.45359237$
-*   **1RM Epley:** $\text{1RM} = W \times (1 + \text{Reps} / 30)$
-*   **1RM Brzycki:** $\text{1RM} = W / (1.0278 - 0.0278 \times \text{Reps})$
-*   **Carga Inicial Biométrica:** $W_{\text{start}} = W_{\text{ref}} \times F_{\text{peso}} \times F_{\text{sexo}} \times F_{\text{idade}} \times F_{\text{exp}}$
-*   **Fadiga Acumulada na Sessão:** $M_{\text{pos}} = \text{clamp}(1.0 - 0.04 \times \sum \text{Fadiga}_{\text{ant}},\ 0.75,\ 1.0)$
-*   **Recuperação Muscular:** $R_{\%} = \text{clamp}(t_{\text{decorrido}} / T_{\text{rec}},\ 0.0,\ 1.0) \times 100\%$ ($72\text{h}$ músculos grandes / $24\text{h}$ pequenos)
-*   **TMB (Mifflin-St Jeor):** $10 P_{\text{kg}} + 6.25 A_{\text{cm}} - 5 I + s$ ($s = +5$ masculino, $-161$ feminino)
+Configurado como ícone adaptativo em `app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml` e `ic_launcher_round.xml`, mantendo exatamente **1** entrada de launcher ativa (`SplashActivity`).
+
+- **Camada de fundo:** obsidian escuro (`#070B14`) com acento luminoso em azul elétrico/ciano neon (`#00D4FF` / `#2563EB`).
+- **Camada frontal (`ic_launcher_foreground.xml`, viewport `108dp x 108dp`):**
+  - Monograma geométrico `M` inclinado: ala esquerda em branco de alto contraste (`#FFFFFF`) e ala direita em gradiente linear ciano neon para azul elétrico (`#00D4FF` -> `#0EA5E9` -> `#2563EB`).
+  - Chevron ascendente central de performance em ciano neon (`#00D4FF`).
