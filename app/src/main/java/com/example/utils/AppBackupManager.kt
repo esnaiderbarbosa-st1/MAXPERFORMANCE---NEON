@@ -130,7 +130,17 @@ object AppBackupManager {
             if (parsed.backupVersion <= 0) {
                 throw IllegalArgumentException("Versão de backup inválida (${parsed.backupVersion}).")
             }
-            parsed
+            val normalizedRuns = parsed.runningSessions.map { session ->
+                val adv = session.advancedMetrics ?: return@map session
+                val cleanRaceName = if (adv.isRaceOverride == false) {
+                    null
+                } else {
+                    adv.raceName?.trim()?.takeIf { it.isNotBlank() }
+                }
+                if (cleanRaceName == adv.raceName) session
+                else session.copy(advancedMetrics = adv.copy(raceName = cleanRaceName))
+            }
+            parsed.copy(runningSessions = normalizedRuns)
         }
     }
 

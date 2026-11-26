@@ -1759,597 +1759,727 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
                                 }
 
                                 if (showRunConfigDialog) {
+                                    // Estado pendente anti-erro: só aplica ao confirmar no rodapé fixo; "X" fecha sem aplicar
+                                    var draftFreeRaceMode by remember { mutableStateOf(selectedFreeRaceMode) }
+                                    var draftTrack400mSelected by remember { mutableStateOf(isTrack400mSelected) }
+                                    var draftRxWorkoutCode by remember { mutableStateOf(selectedRxWorkoutCode) }
+                                    var draftWeek by remember { mutableIntStateOf(selectedWeek) }
+                                    var draftDay by remember { mutableIntStateOf(selectedDay) }
+                                    var draftIndoor by remember { mutableStateOf(isIndoor) }
+                                    var draftGpsEnabled by remember { mutableStateOf(isGpsEnabled) }
+                                    var draftGentleMode by remember { mutableStateOf(isGentleModeSession) }
+                                    var draftEnvironment by remember { mutableStateOf(selectedEnvironment) }
+                                    var draftTrack400mCalibration by remember { mutableStateOf(isTrack400mCalibrationOn) }
+                                    var draftIncludeWarmupWithStrides by remember { mutableStateOf(includeWarmupWithStrides) }
+                                    var draftActivateRunToMaintain by remember { mutableStateOf(false) }
+
+                                    val draftRxWorkout = remember(draftRxWorkoutCode) {
+                                        com.example.ui.components.RunnerAnamnesisManager.RX_PRO_WORKOUT_CATALOG.firstOrNull {
+                                            it.code == draftRxWorkoutCode
+                                        }
+                                    }
+                                    val draftIsRunToMaintainActive = draftActivateRunToMaintain ||
+                                        selectedProgramId == "run_to_maintain" ||
+                                        anamnesisProfile.goal == com.example.ui.components.RunnerGoalOption.GOAL_MAINTAIN
+
                                     androidx.compose.ui.window.Dialog(
                                         onDismissRequest = { showRunConfigDialog = false },
                                         properties = androidx.compose.ui.window.DialogProperties(
-                                            usePlatformDefaultWidth = false
+                                            usePlatformDefaultWidth = false,
+                                            decorFitsSystemWindows = false
                                         )
                                     ) {
                                         com.example.ui.components.ProvideRunFontScale {
-                                            Surface(
-                                                shape = RoundedCornerShape(22.dp),
-                                                color = Color(0xFF0D0F14),
-                                                border = BorderStroke(1.dp, Color(0xFF262D3D)),
+                                            BoxWithConstraints(
                                                 modifier = Modifier
-                                                    .fillMaxWidth(0.94f)
-                                                    .heightIn(max = 680.dp)
-                                                    .testTag("dialog_run_config")
+                                                    .fillMaxWidth()
+                                                    .statusBarsPadding()
+                                                    .navigationBarsPadding()
+                                                    .padding(horizontal = 12.dp, vertical = 16.dp),
+                                                contentAlignment = Alignment.Center
                                             ) {
-                                                Column(
+                                                val maxModalHeight = (maxHeight * 0.90f).coerceIn(360.dp, 680.dp)
+                                                Surface(
+                                                    shape = RoundedCornerShape(22.dp),
+                                                    color = Color(0xFF070B14),
+                                                    border = BorderStroke(1.dp, Color(0xFF1E293B)),
                                                     modifier = Modifier
                                                         .fillMaxWidth()
-                                                        .verticalScroll(rememberScrollState())
-                                                        .padding(18.dp),
-                                                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                                                        .widthIn(max = 560.dp)
+                                                        .heightIn(max = maxModalHeight)
+                                                        .testTag("dialog_run_config")
                                                 ) {
-                                                    Row(
-                                                        modifier = Modifier.fillMaxWidth(),
-                                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                                        verticalAlignment = Alignment.CenterVertically
-                                                    ) {
-                                                        Text(
-                                                            text = "Configuração da Corrida",
-                                                            color = Color.White,
-                                                            fontSize = 18.sp,
-                                                            fontWeight = FontWeight.Black,
-                                                            modifier = Modifier.weight(1f)
-                                                        )
-                                                        Spacer(modifier = Modifier.width(6.dp))
-                                                        com.example.ui.components.RunFontScaleToggleButton(compact = false)
-                                                        Spacer(modifier = Modifier.width(6.dp))
-                                                        IconButton(
-                                                            onClick = { showRunConfigDialog = false },
-                                                            modifier = Modifier.size(40.dp)
-                                                        ) {
-                                                            Icon(
-                                                                imageVector = Icons.Default.Close,
-                                                                contentDescription = "Fechar",
-                                                                tint = RunColors.textSecondary,
-                                                                modifier = Modifier.size(20.dp)
-                                                            )
-                                                        }
-                                                    }
-
-                                                    // 1. Modalidade do Treino (FlowRow adaptativo com alvos >= 48.dp e fonte >= 14.sp SemiBold)
-                                                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                        Text(
-                                                            text = "1. MODALIDADE DO TREINO",
-                                                            color = RunColors.textSecondary,
-                                                            fontSize = 12.sp,
-                                                            fontWeight = FontWeight.Bold,
-                                                            letterSpacing = 0.6.sp
-                                                        )
-
-                                                        val isPlanSelected = selectedFreeRaceMode == null && !isTrack400mSelected && selectedRxWorkout == null
-                                                        val isFreeSelected = selectedFreeRaceMode == com.example.engine.FreeRunRaceMode.FREE_RUN
-                                                        val is5kSelected = selectedFreeRaceMode == com.example.engine.FreeRunRaceMode.RACE_5K
-                                                        val is10kSelected = selectedFreeRaceMode == com.example.engine.FreeRunRaceMode.RACE_10K
-                                                        val isTrackSelected = selectedFreeRaceMode == null && isTrack400mSelected
-
-                                                        FlowRow(
-                                                            modifier = Modifier.fillMaxWidth(),
-                                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                                                        ) {
-                                                            // Planilha
-                                                            Surface(
-                                                                onClick = {
-                                                                    selectedFreeRaceMode = null
-                                                                    isTrack400mSelected = false
-                                                                    selectedRxWorkoutCode = null
-                                                                    AudioSynth.playTickSound()
-                                                                },
-                                                                color = if (isPlanSelected) RunColors.brand.copy(alpha = 0.24f) else Color(0xFF151922),
-                                                                shape = RoundedCornerShape(12.dp),
-                                                                border = BorderStroke(
-                                                                    width = if (isPlanSelected) 1.5.dp else 1.dp,
-                                                                    color = if (isPlanSelected) RunColors.brandText else Color(0xFF232A38)
-                                                                ),
-                                                                modifier = Modifier
-                                                                    .heightIn(min = 48.dp)
-                                                                    .testTag("pill_mode_planilha")
-                                                            ) {
-                                                                Box(
-                                                                    contentAlignment = Alignment.Center,
-                                                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
-                                                                ) {
-                                                                    Text(
-                                                                        text = "Planilha",
-                                                                        color = if (isPlanSelected) Color.White else Color(0xFFB0B8C4),
-                                                                        fontSize = 14.sp,
-                                                                        fontWeight = if (isPlanSelected) FontWeight.Black else FontWeight.SemiBold
-                                                                    )
-                                                                }
-                                                            }
-
-                                                            // Corrida Livre
-                                                            Surface(
-                                                                onClick = {
-                                                                    selectedFreeRaceMode = com.example.engine.FreeRunRaceMode.FREE_RUN
-                                                                    isTrack400mSelected = false
-                                                                    selectedRxWorkoutCode = null
-                                                                    isIndoor = false
-                                                                    isGpsEnabled = true
-                                                                    isGentleModeSession = false
-                                                                    selectedEnvironment = "OUTDOOR"
-                                                                    activePlan = RunningProgramManager.getFreeOrRacePlan(com.example.engine.FreeRunRaceMode.FREE_RUN)
-                                                                    showPreRunCheckInDialog = false
-                                                                    viewModel.setActivePreRunCheckIn(null)
-                                                                    showRunConfigDialog = false
-                                                                    AudioSynth.playTickSound()
-                                                                },
-                                                                color = if (isFreeSelected) Color(0xFF00E676).copy(alpha = 0.20f) else Color(0xFF151922),
-                                                                shape = RoundedCornerShape(12.dp),
-                                                                border = BorderStroke(
-                                                                    width = if (isFreeSelected) 1.5.dp else 1.dp,
-                                                                    color = if (isFreeSelected) Color(0xFF00E676) else Color(0xFF232A38)
-                                                                ),
-                                                                modifier = Modifier
-                                                                    .heightIn(min = 48.dp)
-                                                                    .testTag("pill_mode_free_run")
-                                                            ) {
-                                                                Box(
-                                                                    contentAlignment = Alignment.Center,
-                                                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
-                                                                ) {
-                                                                    Text(
-                                                                        text = "Corrida Livre",
-                                                                        color = if (isFreeSelected) Color.White else Color(0xFFB0B8C4),
-                                                                        fontSize = 14.sp,
-                                                                        fontWeight = if (isFreeSelected) FontWeight.Black else FontWeight.SemiBold
-                                                                    )
-                                                                }
-                                                            }
-
-                                                            // Meta 5K
-                                                            Surface(
-                                                                onClick = {
-                                                                    selectedFreeRaceMode = com.example.engine.FreeRunRaceMode.RACE_5K
-                                                                    isTrack400mSelected = false
-                                                                    selectedRxWorkoutCode = null
-                                                                    isIndoor = false
-                                                                    isGpsEnabled = true
-                                                                    isGentleModeSession = false
-                                                                    selectedEnvironment = "OUTDOOR"
-                                                                    activePlan = RunningProgramManager.getFreeOrRacePlan(com.example.engine.FreeRunRaceMode.RACE_5K)
-                                                                    showPreRunCheckInDialog = false
-                                                                    viewModel.setActivePreRunCheckIn(null)
-                                                                    showRunConfigDialog = false
-                                                                    AudioSynth.playTickSound()
-                                                                },
-                                                                color = if (is5kSelected) Color(0xFF00B0FF).copy(alpha = 0.24f) else Color(0xFF151922),
-                                                                shape = RoundedCornerShape(12.dp),
-                                                                border = BorderStroke(
-                                                                    width = if (is5kSelected) 1.5.dp else 1.dp,
-                                                                    color = if (is5kSelected) Color(0xFF00E5FF) else Color(0xFF232A38)
-                                                                ),
-                                                                modifier = Modifier
-                                                                    .heightIn(min = 48.dp)
-                                                                    .testTag("pill_mode_race_5k")
-                                                            ) {
-                                                                Box(
-                                                                    contentAlignment = Alignment.Center,
-                                                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
-                                                                ) {
-                                                                    Text(
-                                                                        text = "Meta 5K",
-                                                                        color = if (is5kSelected) Color.White else Color(0xFFB0B8C4),
-                                                                        fontSize = 14.sp,
-                                                                        fontWeight = if (is5kSelected) FontWeight.Black else FontWeight.SemiBold
-                                                                    )
-                                                                }
-                                                            }
-
-                                                            // Meta 10K
-                                                            Surface(
-                                                                onClick = {
-                                                                    selectedFreeRaceMode = com.example.engine.FreeRunRaceMode.RACE_10K
-                                                                    isTrack400mSelected = false
-                                                                    selectedRxWorkoutCode = null
-                                                                    isIndoor = false
-                                                                    isGpsEnabled = true
-                                                                    isGentleModeSession = false
-                                                                    selectedEnvironment = "OUTDOOR"
-                                                                    activePlan = RunningProgramManager.getFreeOrRacePlan(com.example.engine.FreeRunRaceMode.RACE_10K)
-                                                                    showPreRunCheckInDialog = false
-                                                                    viewModel.setActivePreRunCheckIn(null)
-                                                                    showRunConfigDialog = false
-                                                                    AudioSynth.playTickSound()
-                                                                },
-                                                                color = if (is10kSelected) Color(0xFF00B0FF).copy(alpha = 0.24f) else Color(0xFF151922),
-                                                                shape = RoundedCornerShape(12.dp),
-                                                                border = BorderStroke(
-                                                                    width = if (is10kSelected) 1.5.dp else 1.dp,
-                                                                    color = if (is10kSelected) Color(0xFF00E5FF) else Color(0xFF232A38)
-                                                                ),
-                                                                modifier = Modifier
-                                                                    .heightIn(min = 48.dp)
-                                                                    .testTag("pill_mode_race_10k")
-                                                            ) {
-                                                                Box(
-                                                                    contentAlignment = Alignment.Center,
-                                                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
-                                                                ) {
-                                                                    Text(
-                                                                        text = "Meta 10K",
-                                                                        color = if (is10kSelected) Color.White else Color(0xFFB0B8C4),
-                                                                        fontSize = 14.sp,
-                                                                        fontWeight = if (is10kSelected) FontWeight.Black else FontWeight.SemiBold
-                                                                    )
-                                                                }
-                                                            }
-
-                                                            // Pista 400m
-                                                            Surface(
-                                                                onClick = {
-                                                                    selectedFreeRaceMode = null
-                                                                    isTrack400mSelected = true
-                                                                    RunTracker.setTrack400mCalibrationMode(true)
-                                                                    selectedRxWorkoutCode = null
-                                                                    isIndoor = false
-                                                                    isGpsEnabled = true
-                                                                    isGentleModeSession = false
-                                                                    selectedEnvironment = "OUTDOOR"
-                                                                    AudioSynth.playTickSound()
-                                                                },
-                                                                color = if (isTrackSelected) Color(0xFF00E676).copy(alpha = 0.22f) else Color(0xFF151922),
-                                                                shape = RoundedCornerShape(12.dp),
-                                                                border = BorderStroke(
-                                                                    width = if (isTrackSelected) 1.5.dp else 1.dp,
-                                                                    color = if (isTrackSelected) Color(0xFF00E676) else Color(0xFF232A38)
-                                                                ),
-                                                                modifier = Modifier
-                                                                    .heightIn(min = 48.dp)
-                                                                    .testTag("toggle_track_400m_mode")
-                                                            ) {
-                                                                Box(
-                                                                    contentAlignment = Alignment.Center,
-                                                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
-                                                                ) {
-                                                                    Text(
-                                                                        text = "Pista 400m",
-                                                                        color = if (isTrackSelected) Color.White else Color(0xFFB0B8C4),
-                                                                        fontSize = 14.sp,
-                                                                        fontWeight = if (isTrackSelected) FontWeight.Black else FontWeight.SemiBold
-                                                                    )
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-
-                                                    // 1A-2. Catálogo RX-PRO & Run to Maintain + Recalibração de Anamnese dentro do modal "Alterar ▾"
-                                                    com.example.ui.components.RunConfigModalRxAndAnamnesisSection(
-                                                        selectedRxWorkout = selectedRxWorkout,
-                                                        isRunToMaintainActive = selectedProgramId == "run_to_maintain" || anamnesisProfile.goal == com.example.ui.components.RunnerGoalOption.GOAL_MAINTAIN,
-                                                        calibration = runnerCalibration,
-                                                        onOpenRxLibraryModal = {
-                                                            showRunConfigDialog = false
-                                                            showRxWorkoutLibraryModal = true
-                                                        },
-                                                        onClearRxWorkout = {
-                                                            selectedRxWorkoutCode = null
-                                                        },
-                                                        onActivateRunToMaintain = {
-                                                            selectedFreeRaceMode = null
-                                                            isTrack400mSelected = false
-                                                            selectedRxWorkoutCode = null
-                                                            viewModel.selectRunningProgram("run_to_maintain")
-                                                            val updated = anamnesisProfile.copy(
-                                                                goal = com.example.ui.components.RunnerGoalOption.GOAL_MAINTAIN,
-                                                                availableDaysPerWeek = 3,
-                                                                isConfigured = true
-                                                            )
-                                                            com.example.ui.components.RunnerAnamnesisManager.saveProfile(context, updated)
-                                                            anamnesisVersion++
-                                                            Toast.makeText(
-                                                                context,
-                                                                "Modo Run to Maintain ativado (3x/semana integrado à Musculação)",
-                                                                Toast.LENGTH_SHORT
-                                                            ).show()
-                                                        },
-                                                        onOpenAnamnesisModal = {
-                                                            showRunConfigDialog = false
-                                                            showAnamnesisModal = true
-                                                        }
-                                                    )
-
-                                                    // 1B. Seletor de Semana (1..10) e Dia (1..3) quando em modo Planilha
-                                                    if (selectedFreeRaceMode == null && !isTrack400mSelected && selectedRxWorkout == null) {
-                                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                            Text(
-                                                                text = "SEMANA E DIA DA PLANILHA",
-                                                                color = RunColors.textSecondary,
-                                                                fontSize = 12.sp,
-                                                                fontWeight = FontWeight.Bold,
-                                                                letterSpacing = 0.6.sp
-                                                            )
-                                                            FlowRow(
-                                                                modifier = Modifier.fillMaxWidth(),
-                                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                                                            ) {
-                                                                (1..10).forEach { w ->
-                                                                    val isSelected = selectedWeek == w
-                                                                    Surface(
-                                                                        onClick = {
-                                                                            selectedWeek = w
-                                                                            AudioSynth.playTickSound()
-                                                                        },
-                                                                        color = if (isSelected) RunColors.brand.copy(alpha = 0.25f) else Color(0xFF151922),
-                                                                        shape = RoundedCornerShape(10.dp),
-                                                                        border = BorderStroke(
-                                                                            width = if (isSelected) 1.5.dp else 1.dp,
-                                                                            color = if (isSelected) RunColors.brandText else Color(0xFF232A38)
-                                                                        ),
-                                                                        modifier = Modifier.heightIn(min = 46.dp)
-                                                                    ) {
-                                                                        Box(
-                                                                            contentAlignment = Alignment.Center,
-                                                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                                                                        ) {
-                                                                            Text(
-                                                                                text = "Sem $w",
-                                                                                color = if (isSelected) Color.White else Color(0xFFB0B8C4),
-                                                                                fontSize = 14.sp,
-                                                                                fontWeight = if (isSelected) FontWeight.Black else FontWeight.SemiBold
-                                                                            )
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-                                                            FlowRow(
-                                                                modifier = Modifier.fillMaxWidth(),
-                                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                                                            ) {
-                                                                (1..3).forEach { d ->
-                                                                    val isSelected = selectedDay == d
-                                                                    Surface(
-                                                                        onClick = {
-                                                                            selectedDay = d
-                                                                            AudioSynth.playTickSound()
-                                                                        },
-                                                                        color = if (isSelected) RunColors.brand.copy(alpha = 0.25f) else Color(0xFF151922),
-                                                                        shape = RoundedCornerShape(10.dp),
-                                                                        border = BorderStroke(
-                                                                            width = if (isSelected) 1.5.dp else 1.dp,
-                                                                            color = if (isSelected) RunColors.brandText else Color(0xFF232A38)
-                                                                        ),
-                                                                        modifier = Modifier.heightIn(min = 46.dp)
-                                                                    ) {
-                                                                        Box(
-                                                                            contentAlignment = Alignment.Center,
-                                                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                                                                        ) {
-                                                                            Text(
-                                                                                text = "Dia $d",
-                                                                                color = if (isSelected) Color.White else Color(0xFFB0B8C4),
-                                                                                fontSize = 14.sp,
-                                                                                fontWeight = if (isSelected) FontWeight.Black else FontWeight.SemiBold
-                                                                            )
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-
-                                                    // 2. Ambiente e Intensidade (FlowRow adaptativo com alvos >= 48.dp e fonte >= 14.sp SemiBold)
-                                                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                        Text(
-                                                            text = "2. AMBIENTE E INTENSIDADE",
-                                                            color = RunColors.textSecondary,
-                                                            fontSize = 12.sp,
-                                                            fontWeight = FontWeight.Bold,
-                                                            letterSpacing = 0.6.sp
-                                                        )
-
-                                                        val isOutdoorSelected = !isGentleModeSession && !isIndoor && selectedEnvironment == "OUTDOOR" && !isTrack400mCalibrationOn
-                                                        val isTrack400mEnvSelected = !isGentleModeSession && !isIndoor && selectedEnvironment == "OUTDOOR" && isTrack400mCalibrationOn
-                                                        val isTreadmillSelected = !isGentleModeSession && (isIndoor || selectedEnvironment == "TREADMILL")
-
-                                                        FlowRow(
-                                                            modifier = Modifier.fillMaxWidth(),
-                                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                                                        ) {
-                                                            // Ar Livre (GPS)
-                                                            Surface(
-                                                                onClick = {
-                                                                    isIndoor = false
-                                                                    isGpsEnabled = true
-                                                                    isGentleModeSession = false
-                                                                    selectedEnvironment = "OUTDOOR"
-                                                                    RunTracker.setTrack400mCalibrationMode(false)
-                                                                    AudioSynth.playTickSound()
-                                                                },
-                                                                color = if (isOutdoorSelected) RunColors.brand.copy(alpha = 0.24f) else Color(0xFF151922),
-                                                                shape = RoundedCornerShape(12.dp),
-                                                                border = BorderStroke(
-                                                                    width = if (isOutdoorSelected) 1.5.dp else 1.dp,
-                                                                    color = if (isOutdoorSelected) RunColors.brandText else Color(0xFF232A38)
-                                                                ),
-                                                                modifier = Modifier.heightIn(min = 48.dp)
-                                                            ) {
-                                                                Box(
-                                                                    contentAlignment = Alignment.Center,
-                                                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
-                                                                ) {
-                                                                    Text(
-                                                                        text = "Ar Livre (GPS)",
-                                                                        color = if (isOutdoorSelected) Color.White else Color(0xFFB0B8C4),
-                                                                        fontSize = 14.sp,
-                                                                        fontWeight = if (isOutdoorSelected) FontWeight.Bold else FontWeight.SemiBold
-                                                                    )
-                                                                }
-                                                            }
-
-                                                            // Pista 400m (TAF)
-                                                            Surface(
-                                                                onClick = {
-                                                                    isIndoor = false
-                                                                    isGpsEnabled = true
-                                                                    isGentleModeSession = false
-                                                                    selectedEnvironment = "OUTDOOR"
-                                                                    RunTracker.setTrack400mCalibrationMode(true)
-                                                                    AudioSynth.playTickSound()
-                                                                },
-                                                                color = if (isTrack400mEnvSelected) Color(0xFF00E676).copy(alpha = 0.22f) else Color(0xFF151922),
-                                                                shape = RoundedCornerShape(12.dp),
-                                                                border = BorderStroke(
-                                                                    width = if (isTrack400mEnvSelected) 1.5.dp else 1.dp,
-                                                                    color = if (isTrack400mEnvSelected) Color(0xFF00E676) else Color(0xFF232A38)
-                                                                ),
-                                                                modifier = Modifier
-                                                                    .heightIn(min = 48.dp)
-                                                                    .testTag("modal_toggle_pista_400m_taf")
-                                                            ) {
-                                                                Box(
-                                                                    contentAlignment = Alignment.Center,
-                                                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
-                                                                ) {
-                                                                    Text(
-                                                                        text = "Pista 400m (TAF)",
-                                                                        color = if (isTrack400mEnvSelected) Color.White else Color(0xFFB0B8C4),
-                                                                        fontSize = 14.sp,
-                                                                        fontWeight = if (isTrack400mEnvSelected) FontWeight.Black else FontWeight.SemiBold
-                                                                    )
-                                                                }
-                                                            }
-
-                                                            // Esteira (Indoor)
-                                                            Surface(
-                                                                onClick = {
-                                                                    isIndoor = true
-                                                                    isGpsEnabled = false
-                                                                    isGentleModeSession = false
-                                                                    selectedEnvironment = "TREADMILL"
-                                                                    RunTracker.setTrack400mCalibrationMode(false)
-                                                                    AudioSynth.playTickSound()
-                                                                },
-                                                                color = if (isTreadmillSelected) RunColors.brand.copy(alpha = 0.24f) else Color(0xFF151922),
-                                                                shape = RoundedCornerShape(12.dp),
-                                                                border = BorderStroke(
-                                                                    width = if (isTreadmillSelected) 1.5.dp else 1.dp,
-                                                                    color = if (isTreadmillSelected) RunColors.brandText else Color(0xFF232A38)
-                                                                ),
-                                                                modifier = Modifier.heightIn(min = 48.dp)
-                                                            ) {
-                                                                Box(
-                                                                    contentAlignment = Alignment.Center,
-                                                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
-                                                                ) {
-                                                                    Text(
-                                                                        text = "Esteira (Indoor)",
-                                                                        color = if (isTreadmillSelected) Color.White else Color(0xFFB0B8C4),
-                                                                        fontSize = 14.sp,
-                                                                        fontWeight = if (isTreadmillSelected) FontWeight.Bold else FontWeight.SemiBold
-                                                                    )
-                                                                }
-                                                            }
-
-                                                            // Modo Leve (Recuperação)
-                                                            Surface(
-                                                                onClick = {
-                                                                    isGentleModeSession = true
-                                                                    isIndoor = false
-                                                                    isGpsEnabled = true
-                                                                    selectedEnvironment = "OUTDOOR"
-                                                                    AudioSynth.playTickSound()
-                                                                },
-                                                                color = if (isGentleModeSession) RunColors.phaseWalk.copy(alpha = 0.22f) else Color(0xFF151922),
-                                                                shape = RoundedCornerShape(12.dp),
-                                                                border = BorderStroke(
-                                                                    width = if (isGentleModeSession) 1.5.dp else 1.dp,
-                                                                    color = if (isGentleModeSession) RunColors.phaseWalk else Color(0xFF232A38)
-                                                                ),
-                                                                modifier = Modifier.heightIn(min = 48.dp)
-                                                            ) {
-                                                                Box(
-                                                                    contentAlignment = Alignment.Center,
-                                                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
-                                                                ) {
-                                                                    Text(
-                                                                        text = "Modo Leve (Recuperação)",
-                                                                        color = if (isGentleModeSession) RunColors.phaseWalk else Color(0xFFB0B8C4),
-                                                                        fontSize = 14.sp,
-                                                                        fontWeight = if (isGentleModeSession) FontWeight.Bold else FontWeight.SemiBold
-                                                                    )
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-
-                                                    // 3. Preparação
-                                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                        Text(
-                                                            text = "3. PREPARAÇÃO",
-                                                            color = RunColors.textSecondary,
-                                                            fontSize = 12.sp,
-                                                            fontWeight = FontWeight.Bold,
-                                                            letterSpacing = 0.6.sp
-                                                        )
+                                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                                        // ZONA 1: TOPO FIXO (Título + Escala de Fonte + Botão X cancelar)
                                                         Row(
                                                             modifier = Modifier
                                                                 .fillMaxWidth()
-                                                                .heightIn(min = 50.dp)
-                                                                .clip(RoundedCornerShape(12.dp))
-                                                                .background(Color(0xFF151922))
-                                                                .clickable {
-                                                                    includeWarmupWithStrides = !includeWarmupWithStrides
-                                                                    AudioSynth.playTickSound()
-                                                                }
-                                                                .padding(horizontal = 14.dp, vertical = 8.dp)
-                                                                .testTag("toggle_warmup_4x20s_strides"),
+                                                                .padding(start = 18.dp, end = 8.dp, top = 12.dp, bottom = 10.dp),
                                                             horizontalArrangement = Arrangement.SpaceBetween,
                                                             verticalAlignment = Alignment.CenterVertically
                                                         ) {
                                                             Text(
-                                                                text = "Incluir Aquecimento + educativos (5 min)",
-                                                                color = if (includeWarmupWithStrides) Color.White else RunColors.textSecondary,
-                                                                fontSize = 14.sp,
-                                                                fontWeight = FontWeight.SemiBold,
+                                                                text = "Configuração da Corrida",
+                                                                color = Color.White,
+                                                                fontSize = 17.sp,
+                                                                lineHeight = 21.sp,
+                                                                fontWeight = FontWeight.Black,
                                                                 maxLines = 2,
                                                                 overflow = TextOverflow.Ellipsis,
                                                                 modifier = Modifier.weight(1f)
                                                             )
-                                                            Spacer(modifier = Modifier.width(8.dp))
-                                                            Switch(
-                                                                checked = includeWarmupWithStrides,
-                                                                onCheckedChange = {
-                                                                    includeWarmupWithStrides = it
+                                                            Spacer(modifier = Modifier.width(6.dp))
+                                                            com.example.ui.components.RunFontScaleToggleButton(compact = false)
+                                                            Spacer(modifier = Modifier.width(2.dp))
+                                                            IconButton(
+                                                                onClick = {
+                                                                    showRunConfigDialog = false
                                                                     AudioSynth.playTickSound()
                                                                 },
-                                                                colors = SwitchDefaults.colors(
-                                                                    checkedThumbColor = Color.White,
-                                                                    checkedTrackColor = RunColors.brand,
-                                                                    uncheckedThumbColor = Color.Gray,
-                                                                    uncheckedTrackColor = Color(0xFF1F2430)
+                                                                modifier = Modifier
+                                                                    .size(48.dp)
+                                                                    .testTag("btn_dismiss_run_config_modal")
+                                                            ) {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.Close,
+                                                                    contentDescription = "Fechar sem aplicar",
+                                                                    tint = RunColors.textSecondary,
+                                                                    modifier = Modifier.size(20.dp)
                                                                 )
-                                                            )
+                                                            }
                                                         }
-                                                    }
 
-                                                    Button(
-                                                        onClick = {
-                                                            showRunConfigDialog = false
-                                                            AudioSynth.playTickSound()
-                                                        },
-                                                        shape = RoundedCornerShape(14.dp),
-                                                        colors = ButtonDefaults.buttonColors(
-                                                            containerColor = RunColors.brand,
-                                                            contentColor = Color.White
-                                                        ),
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .heightIn(min = 50.dp)
-                                                            .testTag("btn_close_run_config_modal")
-                                                    ) {
-                                                        Text(
-                                                            text = "Concluir",
-                                                            fontSize = 15.sp,
-                                                            fontWeight = FontWeight.Black
+                                                        HorizontalDivider(
+                                                            color = Color(0xFF1E293B),
+                                                            thickness = 1.dp
                                                         )
+
+                                                        // ZONA 2: MIOLO ROLÁVEL (compacto e sem FlowRow sob verticalScroll)
+                                                        Column(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .weight(1f, fill = false)
+                                                                .verticalScroll(rememberScrollState())
+                                                                .padding(horizontal = 18.dp, vertical = 14.dp),
+                                                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                                                        ) {
+                                                            // 1. Modalidade do Treino (grade determinística de chips >= 48dp)
+                                                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                                Text(
+                                                                    text = "1. MODALIDADE DO TREINO",
+                                                                    color = RunColors.textSecondary,
+                                                                    fontSize = 12.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    letterSpacing = 0.6.sp
+                                                                )
+
+                                                                val isPlanSelected = draftFreeRaceMode == null && !draftTrack400mSelected && draftRxWorkout == null
+                                                                val isFreeSelected = draftFreeRaceMode == com.example.engine.FreeRunRaceMode.FREE_RUN
+                                                                val is5kSelected = draftFreeRaceMode == com.example.engine.FreeRunRaceMode.RACE_5K
+                                                                val is10kSelected = draftFreeRaceMode == com.example.engine.FreeRunRaceMode.RACE_10K
+                                                                val isTrackSelected = draftFreeRaceMode == null && draftTrack400mSelected
+
+                                                                // Linha 1: Planilha | Corrida Livre
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                                ) {
+                                                                    Surface(
+                                                                        onClick = {
+                                                                            draftFreeRaceMode = null
+                                                                            draftTrack400mSelected = false
+                                                                            draftRxWorkoutCode = null
+                                                                            AudioSynth.playTickSound()
+                                                                        },
+                                                                        color = if (isPlanSelected) RunColors.brand.copy(alpha = 0.24f) else Color(0xFF151922),
+                                                                        shape = RoundedCornerShape(12.dp),
+                                                                        border = BorderStroke(
+                                                                            width = if (isPlanSelected) 1.5.dp else 1.dp,
+                                                                            color = if (isPlanSelected) RunColors.brandText else Color(0xFF232A38)
+                                                                        ),
+                                                                        modifier = Modifier
+                                                                            .weight(1f)
+                                                                            .heightIn(min = 48.dp)
+                                                                            .testTag("pill_mode_planilha")
+                                                                    ) {
+                                                                        Box(
+                                                                            contentAlignment = Alignment.Center,
+                                                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                                                                        ) {
+                                                                            Text(
+                                                                                text = "Planilha",
+                                                                                color = if (isPlanSelected) Color.White else Color(0xFFB0B8C4),
+                                                                                fontSize = 14.sp,
+                                                                                fontWeight = if (isPlanSelected) FontWeight.Black else FontWeight.SemiBold,
+                                                                                maxLines = 1,
+                                                                                overflow = TextOverflow.Ellipsis
+                                                                            )
+                                                                        }
+                                                                    }
+
+                                                                    Surface(
+                                                                        onClick = {
+                                                                            draftFreeRaceMode = com.example.engine.FreeRunRaceMode.FREE_RUN
+                                                                            draftTrack400mSelected = false
+                                                                            draftRxWorkoutCode = null
+                                                                            draftIndoor = false
+                                                                            draftGpsEnabled = true
+                                                                            draftGentleMode = false
+                                                                            draftEnvironment = "OUTDOOR"
+                                                                            AudioSynth.playTickSound()
+                                                                        },
+                                                                        color = if (isFreeSelected) Color(0xFF00D4FF).copy(alpha = 0.18f) else Color(0xFF151922),
+                                                                        shape = RoundedCornerShape(12.dp),
+                                                                        border = BorderStroke(
+                                                                            width = if (isFreeSelected) 1.5.dp else 1.dp,
+                                                                            color = if (isFreeSelected) Color(0xFF00D4FF) else Color(0xFF232A38)
+                                                                        ),
+                                                                        modifier = Modifier
+                                                                            .weight(1f)
+                                                                            .heightIn(min = 48.dp)
+                                                                            .testTag("pill_mode_free_run")
+                                                                    ) {
+                                                                        Box(
+                                                                            contentAlignment = Alignment.Center,
+                                                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                                                                        ) {
+                                                                            Text(
+                                                                                text = "Corrida Livre",
+                                                                                color = if (isFreeSelected) Color.White else Color(0xFFB0B8C4),
+                                                                                fontSize = 14.sp,
+                                                                                fontWeight = if (isFreeSelected) FontWeight.Black else FontWeight.SemiBold,
+                                                                                maxLines = 1,
+                                                                                overflow = TextOverflow.Ellipsis
+                                                                            )
+                                                                        }
+                                                                    }
+                                                                }
+
+                                                                // Linha 2: Meta 5K | Meta 10K
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                                ) {
+                                                                    Surface(
+                                                                        onClick = {
+                                                                            draftFreeRaceMode = com.example.engine.FreeRunRaceMode.RACE_5K
+                                                                            draftTrack400mSelected = false
+                                                                            draftRxWorkoutCode = null
+                                                                            draftIndoor = false
+                                                                            draftGpsEnabled = true
+                                                                            draftGentleMode = false
+                                                                            draftEnvironment = "OUTDOOR"
+                                                                            AudioSynth.playTickSound()
+                                                                        },
+                                                                        color = if (is5kSelected) Color(0xFF00B0FF).copy(alpha = 0.24f) else Color(0xFF151922),
+                                                                        shape = RoundedCornerShape(12.dp),
+                                                                        border = BorderStroke(
+                                                                            width = if (is5kSelected) 1.5.dp else 1.dp,
+                                                                            color = if (is5kSelected) Color(0xFF00D4FF) else Color(0xFF232A38)
+                                                                        ),
+                                                                        modifier = Modifier
+                                                                            .weight(1f)
+                                                                            .heightIn(min = 48.dp)
+                                                                            .testTag("pill_mode_race_5k")
+                                                                    ) {
+                                                                        Box(
+                                                                            contentAlignment = Alignment.Center,
+                                                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                                                                        ) {
+                                                                            Text(
+                                                                                text = "Meta 5K",
+                                                                                color = if (is5kSelected) Color.White else Color(0xFFB0B8C4),
+                                                                                fontSize = 14.sp,
+                                                                                fontWeight = if (is5kSelected) FontWeight.Black else FontWeight.SemiBold,
+                                                                                maxLines = 1,
+                                                                                overflow = TextOverflow.Ellipsis
+                                                                            )
+                                                                        }
+                                                                    }
+
+                                                                    Surface(
+                                                                        onClick = {
+                                                                            draftFreeRaceMode = com.example.engine.FreeRunRaceMode.RACE_10K
+                                                                            draftTrack400mSelected = false
+                                                                            draftRxWorkoutCode = null
+                                                                            draftIndoor = false
+                                                                            draftGpsEnabled = true
+                                                                            draftGentleMode = false
+                                                                            draftEnvironment = "OUTDOOR"
+                                                                            AudioSynth.playTickSound()
+                                                                        },
+                                                                        color = if (is10kSelected) Color(0xFF00B0FF).copy(alpha = 0.24f) else Color(0xFF151922),
+                                                                        shape = RoundedCornerShape(12.dp),
+                                                                        border = BorderStroke(
+                                                                            width = if (is10kSelected) 1.5.dp else 1.dp,
+                                                                            color = if (is10kSelected) Color(0xFF00D4FF) else Color(0xFF232A38)
+                                                                        ),
+                                                                        modifier = Modifier
+                                                                            .weight(1f)
+                                                                            .heightIn(min = 48.dp)
+                                                                            .testTag("pill_mode_race_10k")
+                                                                    ) {
+                                                                        Box(
+                                                                            contentAlignment = Alignment.Center,
+                                                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                                                                        ) {
+                                                                            Text(
+                                                                                text = "Meta 10K",
+                                                                                color = if (is10kSelected) Color.White else Color(0xFFB0B8C4),
+                                                                                fontSize = 14.sp,
+                                                                                fontWeight = if (is10kSelected) FontWeight.Black else FontWeight.SemiBold,
+                                                                                maxLines = 1,
+                                                                                overflow = TextOverflow.Ellipsis
+                                                                            )
+                                                                        }
+                                                                    }
+                                                                }
+
+                                                                // Linha 3: Pista 400m
+                                                                Surface(
+                                                                    onClick = {
+                                                                        draftFreeRaceMode = null
+                                                                        draftTrack400mSelected = true
+                                                                        draftTrack400mCalibration = true
+                                                                        draftRxWorkoutCode = null
+                                                                        draftIndoor = false
+                                                                        draftGpsEnabled = true
+                                                                        draftGentleMode = false
+                                                                        draftEnvironment = "OUTDOOR"
+                                                                        AudioSynth.playTickSound()
+                                                                    },
+                                                                    color = if (isTrackSelected) Color(0xFF00E676).copy(alpha = 0.22f) else Color(0xFF151922),
+                                                                    shape = RoundedCornerShape(12.dp),
+                                                                    border = BorderStroke(
+                                                                        width = if (isTrackSelected) 1.5.dp else 1.dp,
+                                                                        color = if (isTrackSelected) Color(0xFF00E676) else Color(0xFF232A38)
+                                                                    ),
+                                                                    modifier = Modifier
+                                                                        .fillMaxWidth()
+                                                                        .heightIn(min = 48.dp)
+                                                                        .testTag("toggle_track_400m_mode")
+                                                                ) {
+                                                                    Box(
+                                                                        contentAlignment = Alignment.Center,
+                                                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                                                                    ) {
+                                                                        Text(
+                                                                            text = "Pista 400m",
+                                                                            color = if (isTrackSelected) Color.White else Color(0xFFB0B8C4),
+                                                                            fontSize = 14.sp,
+                                                                            fontWeight = if (isTrackSelected) FontWeight.Black else FontWeight.SemiBold,
+                                                                            maxLines = 1,
+                                                                            overflow = TextOverflow.Ellipsis
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            // 1B. Seletor de Semana (1..10) e Dia (1..3) imediatamente quando em modo Planilha
+                                                            if (draftFreeRaceMode == null && !draftTrack400mSelected && draftRxWorkout == null) {
+                                                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                                    Text(
+                                                                        text = "SEMANA E DIA DA PLANILHA",
+                                                                        color = RunColors.textSecondary,
+                                                                        fontSize = 12.sp,
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        letterSpacing = 0.6.sp
+                                                                    )
+                                                                    (1..10).toList().chunked(4).forEach { weekRow ->
+                                                                        Row(
+                                                                            modifier = Modifier.fillMaxWidth(),
+                                                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                                        ) {
+                                                                            weekRow.forEach { w ->
+                                                                                val isSelected = draftWeek == w
+                                                                                Surface(
+                                                                                    onClick = {
+                                                                                        draftWeek = w
+                                                                                        AudioSynth.playTickSound()
+                                                                                    },
+                                                                                    color = if (isSelected) RunColors.brand.copy(alpha = 0.25f) else Color(0xFF151922),
+                                                                                    shape = RoundedCornerShape(10.dp),
+                                                                                    border = BorderStroke(
+                                                                                        width = if (isSelected) 1.5.dp else 1.dp,
+                                                                                        color = if (isSelected) RunColors.brandText else Color(0xFF232A38)
+                                                                                    ),
+                                                                                    modifier = Modifier
+                                                                                        .weight(1f)
+                                                                                        .heightIn(min = 46.dp)
+                                                                                ) {
+                                                                                    Box(
+                                                                                        contentAlignment = Alignment.Center,
+                                                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)
+                                                                                    ) {
+                                                                                        Text(
+                                                                                            text = "Sem $w",
+                                                                                            color = if (isSelected) Color.White else Color(0xFFB0B8C4),
+                                                                                            fontSize = 13.sp,
+                                                                                            fontWeight = if (isSelected) FontWeight.Black else FontWeight.SemiBold,
+                                                                                            maxLines = 1,
+                                                                                            softWrap = false
+                                                                                        )
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                            repeat(4 - weekRow.size) {
+                                                                                Spacer(modifier = Modifier.weight(1f))
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    Row(
+                                                                        modifier = Modifier.fillMaxWidth(),
+                                                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                                    ) {
+                                                                        (1..3).forEach { d ->
+                                                                            val isSelected = draftDay == d
+                                                                            Surface(
+                                                                                onClick = {
+                                                                                    draftDay = d
+                                                                                    AudioSynth.playTickSound()
+                                                                                },
+                                                                                color = if (isSelected) RunColors.brand.copy(alpha = 0.25f) else Color(0xFF151922),
+                                                                                shape = RoundedCornerShape(10.dp),
+                                                                                border = BorderStroke(
+                                                                                    width = if (isSelected) 1.5.dp else 1.dp,
+                                                                                    color = if (isSelected) RunColors.brandText else Color(0xFF232A38)
+                                                                                ),
+                                                                                modifier = Modifier
+                                                                                    .weight(1f)
+                                                                                    .heightIn(min = 46.dp)
+                                                                            ) {
+                                                                                Box(
+                                                                                    contentAlignment = Alignment.Center,
+                                                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                                                                                ) {
+                                                                                    Text(
+                                                                                        text = "Dia $d",
+                                                                                        color = if (isSelected) Color.White else Color(0xFFB0B8C4),
+                                                                                        fontSize = 13.5.sp,
+                                                                                        fontWeight = if (isSelected) FontWeight.Black else FontWeight.SemiBold,
+                                                                                        maxLines = 1,
+                                                                                        softWrap = false
+                                                                                    )
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            // 1A-2. Catálogo RX-PRO & Run to Maintain + Recalibração de Anamnese
+                                                            com.example.ui.components.RunConfigModalRxAndAnamnesisSection(
+                                                                selectedRxWorkout = draftRxWorkout,
+                                                                isRunToMaintainActive = draftIsRunToMaintainActive,
+                                                                calibration = runnerCalibration,
+                                                                onOpenRxLibraryModal = {
+                                                                    showRunConfigDialog = false
+                                                                    showRxWorkoutLibraryModal = true
+                                                                },
+                                                                onClearRxWorkout = {
+                                                                    draftRxWorkoutCode = null
+                                                                },
+                                                                onActivateRunToMaintain = {
+                                                                    draftFreeRaceMode = null
+                                                                    draftTrack400mSelected = false
+                                                                    draftRxWorkoutCode = null
+                                                                    draftActivateRunToMaintain = true
+                                                                },
+                                                                onOpenAnamnesisModal = {
+                                                                    showRunConfigDialog = false
+                                                                    showAnamnesisModal = true
+                                                                }
+                                                            )
+
+                                                            // 2. Ambiente e Intensidade (grade 2x2 determinística)
+                                                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                                Text(
+                                                                    text = "2. AMBIENTE E INTENSIDADE",
+                                                                    color = RunColors.textSecondary,
+                                                                    fontSize = 12.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    letterSpacing = 0.6.sp
+                                                                )
+
+                                                                val isOutdoorSelected = !draftGentleMode && !draftIndoor && draftEnvironment == "OUTDOOR" && !draftTrack400mCalibration
+                                                                val isTrack400mEnvSelected = !draftGentleMode && !draftIndoor && draftEnvironment == "OUTDOOR" && draftTrack400mCalibration
+                                                                val isTreadmillSelected = !draftGentleMode && (draftIndoor || draftEnvironment == "TREADMILL")
+
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                                ) {
+                                                                    Surface(
+                                                                        onClick = {
+                                                                            draftIndoor = false
+                                                                            draftGpsEnabled = true
+                                                                            draftGentleMode = false
+                                                                            draftEnvironment = "OUTDOOR"
+                                                                            draftTrack400mCalibration = false
+                                                                            AudioSynth.playTickSound()
+                                                                        },
+                                                                        color = if (isOutdoorSelected) RunColors.brand.copy(alpha = 0.24f) else Color(0xFF151922),
+                                                                        shape = RoundedCornerShape(12.dp),
+                                                                        border = BorderStroke(
+                                                                            width = if (isOutdoorSelected) 1.5.dp else 1.dp,
+                                                                            color = if (isOutdoorSelected) RunColors.brandText else Color(0xFF232A38)
+                                                                        ),
+                                                                        modifier = Modifier
+                                                                            .weight(1f)
+                                                                            .heightIn(min = 48.dp)
+                                                                    ) {
+                                                                        Box(
+                                                                            contentAlignment = Alignment.Center,
+                                                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp)
+                                                                        ) {
+                                                                            Text(
+                                                                                text = "Ar Livre (GPS)",
+                                                                                color = if (isOutdoorSelected) Color.White else Color(0xFFB0B8C4),
+                                                                                fontSize = 13.5.sp,
+                                                                                fontWeight = if (isOutdoorSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                                                                textAlign = TextAlign.Center,
+                                                                                maxLines = 2
+                                                                            )
+                                                                        }
+                                                                    }
+
+                                                                    Surface(
+                                                                        onClick = {
+                                                                            draftIndoor = false
+                                                                            draftGpsEnabled = true
+                                                                            draftGentleMode = false
+                                                                            draftEnvironment = "OUTDOOR"
+                                                                            draftTrack400mCalibration = true
+                                                                            AudioSynth.playTickSound()
+                                                                        },
+                                                                        color = if (isTrack400mEnvSelected) Color(0xFF00E676).copy(alpha = 0.22f) else Color(0xFF151922),
+                                                                        shape = RoundedCornerShape(12.dp),
+                                                                        border = BorderStroke(
+                                                                            width = if (isTrack400mEnvSelected) 1.5.dp else 1.dp,
+                                                                            color = if (isTrack400mEnvSelected) Color(0xFF00E676) else Color(0xFF232A38)
+                                                                        ),
+                                                                        modifier = Modifier
+                                                                            .weight(1f)
+                                                                            .heightIn(min = 48.dp)
+                                                                            .testTag("modal_toggle_pista_400m_taf")
+                                                                    ) {
+                                                                        Box(
+                                                                            contentAlignment = Alignment.Center,
+                                                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp)
+                                                                        ) {
+                                                                            Text(
+                                                                                text = "Pista 400m (TAF)",
+                                                                                color = if (isTrack400mEnvSelected) Color.White else Color(0xFFB0B8C4),
+                                                                                fontSize = 13.5.sp,
+                                                                                fontWeight = if (isTrack400mEnvSelected) FontWeight.Black else FontWeight.SemiBold,
+                                                                                textAlign = TextAlign.Center,
+                                                                                maxLines = 2
+                                                                            )
+                                                                        }
+                                                                    }
+                                                                }
+
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                                ) {
+                                                                    Surface(
+                                                                        onClick = {
+                                                                            draftIndoor = true
+                                                                            draftGpsEnabled = false
+                                                                            draftGentleMode = false
+                                                                            draftEnvironment = "TREADMILL"
+                                                                            draftTrack400mCalibration = false
+                                                                            AudioSynth.playTickSound()
+                                                                        },
+                                                                        color = if (isTreadmillSelected) RunColors.brand.copy(alpha = 0.24f) else Color(0xFF151922),
+                                                                        shape = RoundedCornerShape(12.dp),
+                                                                        border = BorderStroke(
+                                                                            width = if (isTreadmillSelected) 1.5.dp else 1.dp,
+                                                                            color = if (isTreadmillSelected) RunColors.brandText else Color(0xFF232A38)
+                                                                        ),
+                                                                        modifier = Modifier
+                                                                            .weight(1f)
+                                                                            .heightIn(min = 48.dp)
+                                                                    ) {
+                                                                        Box(
+                                                                            contentAlignment = Alignment.Center,
+                                                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp)
+                                                                        ) {
+                                                                            Text(
+                                                                                text = "Esteira (Indoor)",
+                                                                                color = if (isTreadmillSelected) Color.White else Color(0xFFB0B8C4),
+                                                                                fontSize = 13.5.sp,
+                                                                                fontWeight = if (isTreadmillSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                                                                textAlign = TextAlign.Center,
+                                                                                maxLines = 2
+                                                                            )
+                                                                        }
+                                                                    }
+
+                                                                    Surface(
+                                                                        onClick = {
+                                                                            draftGentleMode = true
+                                                                            draftIndoor = false
+                                                                            draftGpsEnabled = true
+                                                                            draftEnvironment = "OUTDOOR"
+                                                                            AudioSynth.playTickSound()
+                                                                        },
+                                                                        color = if (draftGentleMode) RunColors.phaseWalk.copy(alpha = 0.22f) else Color(0xFF151922),
+                                                                        shape = RoundedCornerShape(12.dp),
+                                                                        border = BorderStroke(
+                                                                            width = if (draftGentleMode) 1.5.dp else 1.dp,
+                                                                            color = if (draftGentleMode) RunColors.phaseWalk else Color(0xFF232A38)
+                                                                        ),
+                                                                        modifier = Modifier
+                                                                            .weight(1f)
+                                                                            .heightIn(min = 48.dp)
+                                                                    ) {
+                                                                        Box(
+                                                                            contentAlignment = Alignment.Center,
+                                                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp)
+                                                                        ) {
+                                                                            Text(
+                                                                                text = "Modo Leve",
+                                                                                color = if (draftGentleMode) RunColors.phaseWalk else Color(0xFFB0B8C4),
+                                                                                fontSize = 13.5.sp,
+                                                                                fontWeight = if (draftGentleMode) FontWeight.Bold else FontWeight.SemiBold,
+                                                                                textAlign = TextAlign.Center,
+                                                                                maxLines = 2
+                                                                            )
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            // 3. Preparação
+                                                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                                Text(
+                                                                    text = "3. PREPARAÇÃO",
+                                                                    color = RunColors.textSecondary,
+                                                                    fontSize = 12.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    letterSpacing = 0.6.sp
+                                                                )
+                                                                Row(
+                                                                    modifier = Modifier
+                                                                        .fillMaxWidth()
+                                                                        .heightIn(min = 50.dp)
+                                                                        .clip(RoundedCornerShape(12.dp))
+                                                                        .background(Color(0xFF151922))
+                                                                        .clickable {
+                                                                            draftIncludeWarmupWithStrides = !draftIncludeWarmupWithStrides
+                                                                            AudioSynth.playTickSound()
+                                                                        }
+                                                                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                                                                        .testTag("toggle_warmup_4x20s_strides"),
+                                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                                    verticalAlignment = Alignment.CenterVertically
+                                                                ) {
+                                                                    Text(
+                                                                        text = "Incluir Aquecimento + educativos (5 min)",
+                                                                        color = if (draftIncludeWarmupWithStrides) Color.White else RunColors.textSecondary,
+                                                                        fontSize = 13.5.sp,
+                                                                        fontWeight = FontWeight.SemiBold,
+                                                                        maxLines = 2,
+                                                                        overflow = TextOverflow.Ellipsis,
+                                                                        modifier = Modifier.weight(1f)
+                                                                    )
+                                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                                    Switch(
+                                                                        checked = draftIncludeWarmupWithStrides,
+                                                                        onCheckedChange = {
+                                                                            draftIncludeWarmupWithStrides = it
+                                                                            AudioSynth.playTickSound()
+                                                                        },
+                                                                        colors = SwitchDefaults.colors(
+                                                                            checkedThumbColor = Color.White,
+                                                                            checkedTrackColor = RunColors.brand,
+                                                                            uncheckedThumbColor = Color.Gray,
+                                                                            uncheckedTrackColor = Color(0xFF1F2430)
+                                                                        )
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+
+                                                        // ZONA 3: RODAPÉ FIXO (fora do scroll, sempre visível mesmo em 120%+)
+                                                        HorizontalDivider(
+                                                            color = Color(0xFF1E293B),
+                                                            thickness = 1.dp
+                                                        )
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .background(Color(0xFF0A101D))
+                                                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                                                        ) {
+                                                            Button(
+                                                                onClick = {
+                                                                    selectedFreeRaceMode = draftFreeRaceMode
+                                                                    isTrack400mSelected = draftTrack400mSelected
+                                                                    selectedRxWorkoutCode = draftRxWorkoutCode
+                                                                    isIndoor = draftIndoor
+                                                                    isGpsEnabled = draftGpsEnabled
+                                                                    isGentleModeSession = draftGentleMode
+                                                                    selectedEnvironment = draftEnvironment
+                                                                    includeWarmupWithStrides = draftIncludeWarmupWithStrides
+                                                                    RunTracker.setTrack400mCalibrationMode(draftTrack400mCalibration)
+
+                                                                    if (draftWeek != selectedWeek || draftDay != selectedDay) {
+                                                                        selectedWeek = draftWeek
+                                                                        selectedDay = draftDay
+                                                                        if (draftFreeRaceMode == null && !draftTrack400mSelected && draftRxWorkoutCode == null) {
+                                                                            viewModel.setManualPlanDayOverride(draftWeek, draftDay)
+                                                                        }
+                                                                    }
+
+                                                                    if (draftActivateRunToMaintain) {
+                                                                        viewModel.selectRunningProgram("run_to_maintain")
+                                                                        val updated = anamnesisProfile.copy(
+                                                                            goal = com.example.ui.components.RunnerGoalOption.GOAL_MAINTAIN,
+                                                                            availableDaysPerWeek = 3,
+                                                                            isConfigured = true
+                                                                        )
+                                                                        com.example.ui.components.RunnerAnamnesisManager.saveProfile(context, updated)
+                                                                        anamnesisVersion++
+                                                                        Toast.makeText(
+                                                                            context,
+                                                                            "Modo Run to Maintain ativado (3x/semana integrado à Musculação)",
+                                                                            Toast.LENGTH_SHORT
+                                                                        ).show()
+                                                                    }
+
+                                                                    val confirmedFreeRace = draftFreeRaceMode
+                                                                    if (confirmedFreeRace != null) {
+                                                                        activePlan = RunningProgramManager.getFreeOrRacePlan(confirmedFreeRace)
+                                                                        showPreRunCheckInDialog = false
+                                                                        viewModel.setActivePreRunCheckIn(null)
+                                                                    }
+
+                                                                    showRunConfigDialog = false
+                                                                    AudioSynth.playTickSound()
+                                                                },
+                                                                shape = RoundedCornerShape(14.dp),
+                                                                colors = ButtonDefaults.buttonColors(
+                                                                    containerColor = Color(0xFF00D4FF),
+                                                                    contentColor = Color(0xFF040812)
+                                                                ),
+                                                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                                                                modifier = Modifier
+                                                                    .fillMaxWidth()
+                                                                    .heightIn(min = 52.dp)
+                                                                    .testTag("btn_close_run_config_modal")
+                                                            ) {
+                                                                Text(
+                                                                    text = "Confirmar seleção",
+                                                                    fontSize = 15.sp,
+                                                                    fontWeight = FontWeight.Black,
+                                                                    maxLines = 1,
+                                                                    overflow = TextOverflow.Ellipsis
+                                                                )
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -2613,6 +2743,7 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
                                                     RunningProgramManager.getBadgeLabelForSession(session)
                                                 }
                                                 val badgeAccentColor = when (badgeLabel) {
+                                                    "PROVA" -> Color(0xFFF59E0B)
                                                     "LIVRE" -> Color(0xFF00E5FF)
                                                     "PISTA" -> Color(0xFF00E676)
                                                     "LEVE" -> RunColors.phaseWalk
@@ -4247,6 +4378,7 @@ fun RunningSessionHistoryItem(
     runningShoes: List<com.example.data.model.RunningShoe> = emptyList(),
     isSavedAsOfficialRace: Boolean = false,
     onSaveAsOfficialRaceClick: (() -> Unit)? = null,
+    onClassifySessionClick: (() -> Unit)? = null,
     onSessionClick: (() -> Unit)? = null,
     onShareClick: (() -> Unit)? = null,
     onEditShoeClick: (() -> Unit)? = null,
@@ -4312,12 +4444,18 @@ fun RunningSessionHistoryItem(
 
     val dayTitle = RunningProgramManager.getDisplayTitleForSession(session)
     val badgeLabel = RunningProgramManager.getBadgeLabelForSession(session)
+    val isRaceSession = badgeLabel == "PROVA"
 
-    val envLabel = if (session.isGentleMode) "MODO LEVE"
-                   else if (session.environment == "TREADMILL") "$badgeLabel • ESTEIRA"
-                   else "$badgeLabel • AR LIVRE"
+    val envLabel = when {
+        isRaceSession && session.environment == "TREADMILL" -> "PROVA • ESTEIRA"
+        isRaceSession -> "PROVA • AR LIVRE"
+        session.isGentleMode -> "MODO LEVE"
+        session.environment == "TREADMILL" -> "$badgeLabel • ESTEIRA"
+        else -> "$badgeLabel • AR LIVRE"
+    }
 
     val envBg = when (badgeLabel) {
+        "PROVA" -> Color(0xFFF59E0B).copy(alpha = 0.20f)
         "LIVRE" -> Color(0xFF00E5FF).copy(alpha = 0.15f)
         "PISTA" -> Color(0xFF00E676).copy(alpha = 0.15f)
         "LEVE" -> RunColors.phaseWalk.copy(alpha = 0.15f)
@@ -4325,10 +4463,17 @@ fun RunningSessionHistoryItem(
     }
 
     val envTextColor = when (badgeLabel) {
+        "PROVA" -> Color(0xFFFBBF24)
         "LIVRE" -> Color(0xFF00E5FF)
         "PISTA" -> Color(0xFF00E676)
         "LEVE" -> RunColors.phaseWalk
         else -> RunColors.brandText
+    }
+
+    val envBorderColor = when {
+        isRaceSession -> Color(0xFFF59E0B)
+        onClassifySessionClick != null -> envTextColor.copy(alpha = 0.45f)
+        else -> Color.Transparent
     }
 
     Card(
@@ -4339,7 +4484,10 @@ fun RunningSessionHistoryItem(
             ),
         colors = CardDefaults.cardColors(containerColor = RunColors.surface),
         shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, RunColors.border)
+        border = BorderStroke(
+            width = if (isRaceSession) 1.2.dp else 1.dp,
+            color = if (isRaceSession) Color(0xFFF59E0B).copy(alpha = 0.55f) else RunColors.border
+        )
     ) {
         Column(
             modifier = Modifier
@@ -4347,7 +4495,7 @@ fun RunningSessionHistoryItem(
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Linha 1: "Semana N · Dia D" + Tag Ambiente + Data "dd.mm.aa HH:mm"
+            // Linha 1: Título da sessão + Badge clicável de classificação (PROVA / LIVRE / ...) + Data
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -4365,18 +4513,34 @@ fun RunningSessionHistoryItem(
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         softWrap = false,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
                     Surface(
                         color = envBg,
-                        shape = RoundedCornerShape(4.dp)
+                        shape = RoundedCornerShape(6.dp),
+                        border = if (envBorderColor != Color.Transparent) {
+                            BorderStroke(if (isRaceSession) 1.dp else 0.75.dp, envBorderColor)
+                        } else null,
+                        modifier = Modifier
+                            .testTag("badge_classify_session_${session.id}")
+                            .then(
+                                if (onClassifySessionClick != null) {
+                                    Modifier.clickable(
+                                        onClickLabel = "Classificar sessão como Treino ou Prova",
+                                        onClick = onClassifySessionClick
+                                    )
+                                } else Modifier
+                            )
                     ) {
                         Text(
                             text = envLabel,
                             color = envTextColor,
                             fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            fontWeight = if (isRaceSession) FontWeight.Black else FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                         )
                     }
                 }

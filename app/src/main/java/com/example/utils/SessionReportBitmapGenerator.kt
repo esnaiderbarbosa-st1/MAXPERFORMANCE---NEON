@@ -23,6 +23,7 @@ import com.example.data.model.extractValidHrCurveSamples
 import com.example.data.model.hasHrCurve
 import com.example.data.model.hasHrZones
 import com.example.data.model.hrCurveUnavailableMessage
+import com.example.data.model.isClassifiedAsRace
 import com.example.data.model.isSimulatedOrTestSession
 import com.example.data.model.resolveSessionRoutePointsWithPhases
 import com.example.data.model.toHrTimelineList
@@ -143,17 +144,32 @@ object SessionReportBitmapGenerator {
         canvas.drawText(athleteName, marginX, currentY + 84f, paint)
 
         // Badge de Identificação da Sessão à direita do nome
-        val workoutBadgeText = com.example.engine.RunningProgramManager.getDisplayTitleForSession(session)
+        val isRaceBadge = session.isClassifiedAsRace()
+        val rawBadgeTitle = com.example.engine.RunningProgramManager.getDisplayTitleForSession(session)
+        val workoutBadgeText = if (isRaceBadge && !rawBadgeTitle.startsWith("PROVA", ignoreCase = true)) {
+            "PROVA • $rawBadgeTitle"
+        } else {
+            rawBadgeTitle
+        }
         paint.textSize = 25f
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         val badgeW = paint.measureText(workoutBadgeText) + 36f
         val badgeRect = RectF(marginX + contentWidth - badgeW, currentY + 46f, marginX + contentWidth, currentY + 92f)
         val badgeBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = if (isLightReport) 0xFFE0F2FE.toInt() else 0xFF132A3E.toInt()
+            color = when {
+                isRaceBadge && isLightReport -> 0xFFFEF3C7.toInt()
+                isRaceBadge -> 0xFF332309.toInt()
+                isLightReport -> 0xFFE0F2FE.toInt()
+                else -> 0xFF132A3E.toInt()
+            }
             style = Paint.Style.FILL
         }
         canvas.drawRoundRect(badgeRect, 14f, 14f, badgeBgPaint)
-        paint.color = accentColor
+        paint.color = when {
+            isRaceBadge && isLightReport -> 0xFFB45309.toInt()
+            isRaceBadge -> 0xFFFBBF24.toInt()
+            else -> accentColor
+        }
         canvas.drawText(workoutBadgeText, badgeRect.left + 18f, currentY + 77f, paint)
 
         val dateStr = SimpleDateFormat("dd/MM/yyyy • HH:mm", ptBr).format(Date(session.date))

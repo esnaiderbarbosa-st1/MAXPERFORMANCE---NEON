@@ -54,6 +54,7 @@ import com.example.data.model.formatPaceMinSecQuote
 import com.example.data.model.hasHrCurve
 import com.example.data.model.hasHrZones
 import com.example.data.model.hrCurveUnavailableMessage
+import com.example.data.model.isClassifiedAsRace
 import com.example.data.model.safeCoerceIn
 import com.example.data.model.safeRoundToInt
 import java.text.SimpleDateFormat
@@ -107,10 +108,18 @@ fun RunDossierMasterHeaderAnd2x3Grid(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            val isRace = session.isClassifiedAsRace()
+            val topBadgeAccent = if (isRace) {
+                if (isLightMode) Color(0xFFB45309) else Color(0xFFFBBF24)
+            } else {
+                accentCyan
+            }
+            val topBadgeBg = if (isRace) Color(0xFFF59E0B).copy(alpha = 0.18f) else accentBlue.copy(alpha = 0.14f)
+            val topBadgeBorder = if (isRace) Color(0xFFF59E0B) else accentCyan.copy(alpha = 0.45f)
             Surface(
-                color = accentBlue.copy(alpha = 0.14f),
+                color = topBadgeBg,
                 shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, accentCyan.copy(alpha = 0.45f)),
+                border = BorderStroke(1.dp, topBadgeBorder),
                 modifier = Modifier.weight(1f, fill = false)
             ) {
                 Row(
@@ -119,14 +128,14 @@ fun RunDossierMasterHeaderAnd2x3Grid(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.DirectionsRun,
+                        imageVector = if (isRace) Icons.Default.EmojiEvents else Icons.Default.DirectionsRun,
                         contentDescription = null,
-                        tint = accentCyan,
+                        tint = topBadgeAccent,
                         modifier = Modifier.size(14.dp)
                     )
                     Text(
                         text = dossier.badgeTitle,
-                        color = accentCyan,
+                        color = topBadgeAccent,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Black,
                         maxLines = 1,
@@ -179,19 +188,23 @@ fun RunDossierMasterHeaderAnd2x3Grid(
                         }
                     }
 
+                    val isNavRace = session.isClassifiedAsRace()
                     Surface(
-                        color = accentBlue.copy(alpha = 0.14f),
+                        color = if (isNavRace) Color(0xFFF59E0B).copy(alpha = 0.20f) else accentBlue.copy(alpha = 0.14f),
                         shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, accentBlue.copy(alpha = 0.4f))
+                        border = BorderStroke(1.dp, if (isNavRace) Color(0xFFF59E0B) else accentBlue.copy(alpha = 0.4f))
                     ) {
-                        val navBadgeText = if (com.example.engine.RunningProgramManager.isEffectiveFreeRun(session) || session.weekNumber <= 0) {
-                            com.example.engine.RunningProgramManager.getBadgeLabelForSession(session)
-                        } else {
-                            "S${session.weekNumber} • D${session.dayNumber}"
+                        val navBadgeText = when {
+                            isNavRace -> "PROVA"
+                            com.example.engine.RunningProgramManager.isEffectiveFreeRun(session) || session.weekNumber <= 0 ->
+                                com.example.engine.RunningProgramManager.getBadgeLabelForSession(session)
+                            else -> "S${session.weekNumber} • D${session.dayNumber}"
                         }
                         Text(
                             text = navBadgeText,
-                            color = accentCyan,
+                            color = if (isNavRace) {
+                                if (isLightMode) Color(0xFFB45309) else Color(0xFFFBBF24)
+                            } else accentCyan,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Black,
                             maxLines = 1,

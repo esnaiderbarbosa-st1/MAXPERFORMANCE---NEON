@@ -49,6 +49,7 @@ import com.example.data.model.SplitSelectorMode
 import com.example.data.model.buildRunPhysiologyDossier
 import com.example.data.model.buildSplitsForMode
 import com.example.data.model.calculateSprintAnalytics
+import com.example.data.model.isClassifiedAsRace
 import com.example.data.model.isSimulatedOrTestSession
 import com.example.data.model.resolveSessionRoutePointsWithPhases
 import com.example.data.model.safeCoerceIn
@@ -93,6 +94,7 @@ fun RunningSessionDetailScreen(viewModel: MainViewModel) {
     val allGymSessions by viewModel.gymWorkoutSessions.collectAsState()
 
     var showShoeDialog by remember { mutableStateOf(false) }
+    var showClassifySessionDialog by remember { mutableStateOf(false) }
     var showSaveOfficialRaceDialog by remember { mutableStateOf(false) }
     var showOfficialRacesVaultDialog by remember { mutableStateOf(false) }
     var showSyncWatchDialog by remember { mutableStateOf(false) }
@@ -579,6 +581,70 @@ fun RunningSessionDetailScreen(viewModel: MainViewModel) {
                         }
                     }
 
+                    // Botão de Classificação Rápida: "Marcar como Prova" / "Editar Prova"
+                    val isClassifiedRace = currentSession.isClassifiedAsRace()
+                    val raceAmber = Color(0xFFF59E0B)
+                    val raceAmberText = if (isLightReport) Color(0xFFB45309) else Color(0xFFFBBF24)
+                    Surface(
+                        onClick = {
+                            AudioSynth.playTickSound()
+                            showClassifySessionDialog = true
+                        },
+                        color = if (isClassifiedRace) raceAmber.copy(alpha = 0.18f) else cardBg,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(
+                            width = 1.2.dp,
+                            color = if (isClassifiedRace) raceAmber else raceAmber.copy(alpha = 0.55f)
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("btn_classify_running_session")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.EmojiEvents,
+                                contentDescription = null,
+                                tint = raceAmberText,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (isClassifiedRace) "Editar Prova" else "Marcar como Prova",
+                                color = raceAmberText,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Black,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (isClassifiedRace) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Surface(
+                                    color = raceAmber.copy(alpha = 0.24f),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = BorderStroke(1.dp, raceAmber)
+                                ) {
+                                    Text(
+                                        text = "PROVA",
+                                        color = raceAmberText,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Black,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     // Botão de Ação: "Sincronizar Relógio (Mi Fitness)" (Icons.Default.Watch / Icons.Default.Edit)
                     val isWatchSynced = currentSession.hrProvenance?.source == com.example.data.model.DataSourceType.OPTICAL_PPG_WATCH ||
                         currentSession.advancedMetrics?.watchSyncedSteps != null
@@ -658,13 +724,8 @@ fun RunningSessionDetailScreen(viewModel: MainViewModel) {
                                 ?: inlineHrTimeline.takeIf { it.isNotEmpty() }?.average()?.safeRoundToInt()
                                 ?: physiologyDossier.avgHeartRateBpm.takeIf { it > 0 }
                                 ?: 0
-                            val inlineTitle = remember(currentSession.sessionType, currentSession.isGentleMode, currentSession.weekNumber, currentSession.dayNumber) {
-                                RunningProgramManager.getDisplayTitleForSessionType(
-                                    sessionType = currentSession.sessionType,
-                                    isGentleMode = currentSession.isGentleMode,
-                                    weekNumber = currentSession.weekNumber,
-                                    dayNumber = currentSession.dayNumber
-                                )
+                            val inlineTitle = remember(currentSession) {
+                                RunningProgramManager.getDisplayTitleForSession(currentSession)
                             }
                             AnimatedRouteMapView(
                                 routePoints = routeCoords,
@@ -1714,6 +1775,27 @@ fun RunningSessionDetailScreen(viewModel: MainViewModel) {
         )
     }
 
+    if (showClassifySessionDialog) {
+        com.example.ui.components.RunSessionClassificationDialog(
+            session = currentSession,
+            onDismiss = { showClassifySessionDialog = false },
+            onConfirm = { isRace, raceName ->
+                viewModel.updateRunningSessionClassification(
+                    sessionId = currentSession.id,
+                    isRace = isRace,
+                    raceName = raceName
+                )
+                showClassifySessionDialog = false
+                val feedback = if (isRace) {
+                    if (!raceName.isNullOrBlank()) "Marcada como Prova: $raceName" else "Sessão marcada como Prova"
+                } else {
+                    "Sessão marcada como Treino"
+                }
+                Toast.makeText(context, feedback, Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
     if (showSaveOfficialRaceDialog) {
         val existingLinked = remember(officialRaces, currentSession.id) {
             officialRaces.firstOrNull { it.linkedRunSessionId == currentSession.id }
@@ -1809,13 +1891,8 @@ fun RunningSessionDetailScreen(viewModel: MainViewModel) {
             ?: physiologyDossier.avgHeartRateBpm.takeIf { it > 0 }
             ?: physiologyDossier.maxHeartRateBpm.takeIf { it > 0 }
             ?: 0
-        val fullscreenTitle = remember(currentSession.sessionType, currentSession.isGentleMode, currentSession.weekNumber, currentSession.dayNumber) {
-            RunningProgramManager.getDisplayTitleForSessionType(
-                sessionType = currentSession.sessionType,
-                isGentleMode = currentSession.isGentleMode,
-                weekNumber = currentSession.weekNumber,
-                dayNumber = currentSession.dayNumber
-            )
+        val fullscreenTitle = remember(currentSession) {
+            RunningProgramManager.getDisplayTitleForSession(currentSession)
         }
         com.example.ui.components.FullscreenMapDialog(
             routePoints = routeCoords,

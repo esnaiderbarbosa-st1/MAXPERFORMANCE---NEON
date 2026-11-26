@@ -383,8 +383,37 @@ data class AdvancedRunningMetrics(
     val watchSyncedCadenceSpm: Int? = null,
     val watchSyncedStrideCm: Int? = null,
     val watchSyncedActiveKcal: Int? = null,
-    val watchSyncedTotalKcal: Int? = null
+    val watchSyncedTotalKcal: Int? = null,
+    // Classificação manual da sessão (Treino vs. Prova) + nome opcional da prova (retrocompatível sem migração Room)
+    val isRaceOverride: Boolean? = null,
+    val raceName: String? = null
 )
+
+fun RunningSession.isClassifiedAsRace(): Boolean {
+    val override = advancedMetrics?.isRaceOverride
+    if (override != null) return override
+    return sessionType.equals("RACE_5K", ignoreCase = true) ||
+        sessionType.equals("RACE_10K", ignoreCase = true)
+}
+
+fun RunningSession.customRaceName(): String? {
+    if (!isClassifiedAsRace()) return null
+    return advancedMetrics?.raceName?.trim()?.takeIf { it.isNotBlank() }
+}
+
+fun RunningSession.withRaceClassification(
+    isRace: Boolean,
+    raceName: String?
+): RunningSession {
+    val cleanRaceName = if (isRace) raceName?.trim()?.takeIf { it.isNotBlank() } else null
+    val baseMetrics = advancedMetrics ?: AdvancedRunningMetrics()
+    return copy(
+        advancedMetrics = baseMetrics.copy(
+            isRaceOverride = isRace,
+            raceName = cleanRaceName
+        )
+    )
+}
 
 fun List<ExecutedInterval>.toExecutedIntervalsJsonString(): String {
     val arr = org.json.JSONArray()
@@ -465,6 +494,8 @@ fun AdvancedRunningMetrics.toJsonString(): String {
     watchSyncedStrideCm?.let { obj.put("watchSyncedStrideCm", it) }
     watchSyncedActiveKcal?.let { obj.put("watchSyncedActiveKcal", it) }
     watchSyncedTotalKcal?.let { obj.put("watchSyncedTotalKcal", it) }
+    isRaceOverride?.let { obj.put("isRaceOverride", it) }
+    raceName?.trim()?.takeIf { it.isNotBlank() }?.let { obj.put("raceName", it) }
     return obj.toString()
 }
 
@@ -489,7 +520,9 @@ fun String?.toAdvancedRunningMetrics(): AdvancedRunningMetrics? {
             watchSyncedCadenceSpm = if (obj.has("watchSyncedCadenceSpm") && !obj.isNull("watchSyncedCadenceSpm")) obj.optInt("watchSyncedCadenceSpm").takeIf { it > 0 } else null,
             watchSyncedStrideCm = if (obj.has("watchSyncedStrideCm") && !obj.isNull("watchSyncedStrideCm")) obj.optInt("watchSyncedStrideCm").takeIf { it > 0 } else null,
             watchSyncedActiveKcal = if (obj.has("watchSyncedActiveKcal") && !obj.isNull("watchSyncedActiveKcal")) obj.optInt("watchSyncedActiveKcal").takeIf { it > 0 } else null,
-            watchSyncedTotalKcal = if (obj.has("watchSyncedTotalKcal") && !obj.isNull("watchSyncedTotalKcal")) obj.optInt("watchSyncedTotalKcal").takeIf { it > 0 } else null
+            watchSyncedTotalKcal = if (obj.has("watchSyncedTotalKcal") && !obj.isNull("watchSyncedTotalKcal")) obj.optInt("watchSyncedTotalKcal").takeIf { it > 0 } else null,
+            isRaceOverride = if (obj.has("isRaceOverride") && !obj.isNull("isRaceOverride")) obj.optBoolean("isRaceOverride") else null,
+            raceName = obj.optString("raceName", "").trim().takeIf { it.isNotBlank() && it != "null" }
         )
     } catch (_: Exception) {
         null
@@ -1386,7 +1419,8 @@ fun calculateSprintAnalytics(
 
     val displaySessionTitle = RunningProgramManager.getDisplayTitleForSession(session)
     val headerIdentification = when {
-        freeRaceMode != null -> "${freeRaceMode.fullTitle} • $structureSummary"
+        session.isClassifiedAsRace() -> "PROVA • $displaySessionTitle • $structureSummary"
+        freeRaceMode != null -> "$displaySessionTitle • $structureSummary"
         session.isGentleMode -> "Modo Leve • $structureSummary"
         else -> "$displaySessionTitle • $structureSummary"
     }
@@ -2610,6 +2644,19 @@ fun buildRunPhysiologyDossier(
     val athleteName = rawName.ifBlank { "Atleta" }
     val freeRaceMode = com.example.engine.FreeRunRaceMode.fromSessionType(session.sessionType)
     val badgeTitle = when {
+        session.isClassifiedAsRace() -> {
+            val raceTitle = session.customRaceName() ?: RunningProgramManager.getDisplayTitleForSession(session)
+            "MAX RUN | PROVA • $raceTitle"
+        }
+        session.advancedMetrics?.isRaceOverride == false &&
+            (freeRaceMode == com.example.engine.FreeRunRaceMode.RACE_5K ||
+                freeRaceMode == com.example.engine.FreeRunRaceMode.RACE_10K) -> {
+            if (session.environment.equals("TREADMILL", ignoreCase = true)) {
+                "MAX RUN | Corrida na esteira"
+            } else {
+                "MAX RUN | Corrida ao ar livre"
+            }
+        }
         freeRaceMode != null -> "MAX RUN | ${freeRaceMode.fullTitle}"
         session.isGentleMode -> "MAX RUN | Caminhada regenerativa"
         session.environment.equals("TREADMILL", ignoreCase = true) -> "MAX RUN | Corrida na esteira"

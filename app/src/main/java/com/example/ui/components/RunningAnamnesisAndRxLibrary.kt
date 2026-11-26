@@ -1051,28 +1051,34 @@ fun RunConfigModalRxAndAnamnesisSection(
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = "TREINOS ESTRUTURADOS (RX-PRO & MANUTENÇÃO)",
                 color = RunColors.textSecondary,
                 fontSize = 12.sp,
+                lineHeight = 15.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = 0.6.sp
+                letterSpacing = 0.5.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
             )
             Text(
-                text = "Calibrar VAM/Zonas ⚙",
-                color = Color(0xFF00E5FF),
+                text = "Calibrar Zonas",
+                color = Color(0xFF00D4FF),
                 fontSize = 11.5.sp,
                 fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                softWrap = false,
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .clickable {
                         AudioSynth.playTickSound()
                         onOpenAnamnesisModal()
                     }
-                    .padding(horizontal = 6.dp, vertical = 4.dp)
+                    .padding(horizontal = 6.dp, vertical = 6.dp)
                     .testTag("btn_open_runner_anamnesis")
             )
         }

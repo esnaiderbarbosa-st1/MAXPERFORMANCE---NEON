@@ -4,6 +4,8 @@ import java.io.Serializable
 import com.example.data.model.RunningSession
 import com.example.data.model.calculateEffectiveMaxHr
 import com.example.data.model.calculateSprintAnalytics
+import com.example.data.model.customRaceName
+import com.example.data.model.isClassifiedAsRace
 import com.example.data.model.isSimulatedOrTestSession
 import com.example.data.model.toRecordedKmSplits
 
@@ -1069,7 +1071,10 @@ object RunningProgramManager {
     }
 
     fun getDisplayTitleForSession(session: RunningSession): String {
+        val customName = session.customRaceName()
+        if (customName != null) return customName
         val st = session.sessionType
+        val isExplicitTraining = session.advancedMetrics?.isRaceOverride == false
         return when {
             session.isGentleMode || st.equals("GENTLE_WALK", ignoreCase = true) -> "Caminhada / Trote Leve"
             st.startsWith("RX_", ignoreCase = true) -> "Treino ${st.removePrefix("RX_")}"
@@ -1078,8 +1083,8 @@ object RunningProgramManager {
             st.equals("INTERVAL_4X4MIN", ignoreCase = true) -> "Intervalado 4×4 min"
             st.equals("THRESHOLD_3X8MIN", ignoreCase = true) -> "Ritmo Fracionado 3×8 min"
             isTrack400mSessionType(st) -> "Intervalado Pista 400m"
-            st.equals("RACE_5K", ignoreCase = true) -> "Prova 5K"
-            st.equals("RACE_10K", ignoreCase = true) -> "Prova 10K"
+            st.equals("RACE_5K", ignoreCase = true) -> if (isExplicitTraining) "Treino 5K" else "Prova 5K"
+            st.equals("RACE_10K", ignoreCase = true) -> if (isExplicitTraining) "Treino 10K" else "Prova 10K"
             isEffectiveFreeRun(session) -> "Corrida Livre"
             else -> getDisplayTitleForSessionType(
                 sessionType = st,
@@ -1091,6 +1096,7 @@ object RunningProgramManager {
     }
 
     fun getBadgeLabelForSession(session: RunningSession): String {
+        if (session.isClassifiedAsRace()) return "PROVA"
         val st = session.sessionType
         return when {
             session.isGentleMode || st.equals("GENTLE_WALK", ignoreCase = true) -> "LEVE"

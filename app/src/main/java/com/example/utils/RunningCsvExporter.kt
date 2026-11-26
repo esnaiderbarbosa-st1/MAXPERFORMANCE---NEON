@@ -14,8 +14,10 @@ import com.example.data.model.RunningSession
 import com.example.data.model.RunningShoe
 import com.example.data.model.UserProfileData
 import com.example.data.model.calculateSprintAnalytics
+import com.example.data.model.isClassifiedAsRace
 import com.example.data.model.isSimulatedOrTestSession
 import com.example.data.model.toRoutePointItems
+import com.example.engine.RunningProgramManager
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -80,6 +82,177 @@ object RunningCsvExporter {
         return String.format(Locale.US, "%02d:%02d", mins, secs)
     }
 
+    /**
+     * Gera o conteúdo CSV analítico em memória (puro JVM) incluindo classificação Treino/Prova e título atualizado.
+     */
+    fun buildCsvContent(
+        history: List<RunningSession>,
+        userProfile: UserProfileData? = null,
+        runningShoes: List<RunningShoe> = emptyList(),
+        cityResolver: (RunningSession) -> String = { session ->
+            if (session.isSimulatedOrTestSession()) "Simulacao" else ""
+        }
+    ): String {
+        val ptBr = Locale("pt", "BR")
+        val dateFormat = SimpleDateFormat("dd/MM/yyyy", ptBr)
+        val timeFormat = SimpleDateFormat("HH:mm", ptBr)
+        val athleteName = userProfile?.nome?.ifBlank { "Atleta MAX" } ?: "Atleta MAX"
+
+        val csvBuilder = StringBuilder()
+        // BOM UTF-8 para abertura perfeita de acentos no Excel / Google Sheets
+        csvBuilder.append("\uFEFF")
+
+        // Cabeçalho Analítico (Padrão Estudo Mensal) separado em 5 grupos claros:
+        // 1. Identificação | 2. Treino Principal | 3. Sessão Total | 4. Desempenho nos Tiros | 5. Fisiologia/Equipamento
+        val columns = listOf(
+            // Identificação
+            "Data",
+            "Hora",
+            "Atleta",
+            "Classificacao",
+            "Titulo_Sessao",
+            "Semana",
+            "Dia",
+            "Estrutura",
+            "Cidade_GPS",
+            // Treino Principal
+            "Dist_Principal_KM",
+            "Tempo_Principal_Seg",
+            "Tempo_Principal_Min_Dec",
+            "Tempo_Principal_MMSS",
+            "Pace_Principal",
+            // Sessão Total
+            "Dist_Total_KM",
+            "Tempo_Total_Seg",
+            "Tempo_Total_Min_Dec",
+            "Tempo_Total_MMSS",
+            "Pace_Total",
+            // Desempenho nos Tiros
+            "Pace_Medio_Tiros",
+            "Pace_Melhor_Tiro",
+            "Tempo_Correndo_Seg",
+            "Tempo_Caminhando_Seg",
+            // Fisiologia / Equipamento
+            "BPM_Medio",
+            "BPM_Max",
+            "Cadencia_SPM",
+            "Tenis_Utilizado",
+            "KM_Acumulado_Tenis",
+            "RPE_Manual",
+            "Dor_Manual"
+        )
+        csvBuilder.append(columns.joinToString(";")).append("\n")
+
+        // Ordena cronologicamente para cálculo de KM acumulado por tênis
+        val chronologicalHistory = history.sortedBy { it.date }
+        val shoeAccumulatedMetersMap = mutableMapOf<String, Long>()
+
+        // Mapeia o KM acumulado até cada sessão
+        val sessionShoeKmSnapshot = mutableMapOf<String, Float>()
+        for (s in chronologicalHistory) {
+            val sName = s.shoeName?.trim() ?: ""
+            if (sName.isNotEmpty() && !sName.equals("Nenhum", ignoreCase = true)) {
+                val prevMeters = shoeAccumulatedMetersMap[sName] ?: 0L
+                val newMeters = prevMeters + s.distanceMeters.toLong()
+                shoeAccumulatedMetersMap[sName] = newMeters
+                sessionShoeKmSnapshot[s.id] = newMeters / 1000f
+            }
+        }
+
+        for (session in history.sortedByDescending { it.date }) {
+            val dateObj = Date(session.date)
+            val dateStr = dateFormat.format(dateObj)
+            val hourStr = timeFormat.format(dateObj)
+            val classificationStr = if (session.isClassifiedAsRace()) "Prova" else "Treino"
+            val sessionTitleStr = RunningProgramManager.getDisplayTitleForSession(session)
+            val weekStr = session.weekNumber.toString()
+            val dayStr = session.dayNumber.toString()
+
+            val sprintAnalytics = calculateSprintAnalytics(session, emptyList())
+            val structureStr = sprintAnalytics.structureSummary
+            val cityGpsStr = cityResolver(session).replace(";", ",")
+
+            // Treino Principal
+            val mainDistMeters = sprintAnalytics.mainDistMeters
+            val mainDurationSec = sprintAnalytics.mainDurationSec
+            val mainDistKmStr = String.format(ptBr, "%.2f", mainDistMeters / 1000f)
+            val mainDurationMinDecStr = String.format(ptBr, "%.2f", mainDurationSec / 60f)
+            val mainDurationMmSsStr = formatDurationMmSs(mainDurationSec)
+            val mainPaceStr = formatPaceMmSs(sprintAnalytics.mainPaceSecPerKm)
+
+            // Sessão Total
+            val totalDistMeters = sprintAnalytics.totalDistMeters
+            val totalDurationSec = sprintAnalytics.totalDurationSec
+            val totalDistKmStr = String.format(ptBr, "%.2f", totalDistMeters / 1000f)
+            val totalDurationMinDecStr = String.format(ptBr, "%.2f", totalDurationSec / 60f)
+            val totalDurationMmSsStr = formatDurationMmSs(totalDurationSec)
+            val totalPaceStr = formatPaceMmSs(sprintAnalytics.totalPaceSecPerKm)
+
+            // Desempenho nos Tiros
+            val avgSprintPaceStr = formatPaceMmSs(sprintAnalytics.avgSprintPaceSecPerKm)
+            val bestSprintPaceStr = formatPaceMmSs(sprintAnalytics.bestSprintPaceSecPerKm)
+            val runningTimeSecStr = sprintAnalytics.runningTimeSec.toString()
+            val walkingTimeSecStr = sprintAnalytics.walkingTimeSec.toString()
+
+            // Fisiologia / Equipamento
+            val avgBpmStr = session.avgHr?.takeIf { it > 0 }?.toString() ?: ""
+            val maxBpmStr = session.maxHr?.takeIf { it > 0 }?.toString() ?: ""
+            val cadenceStr = sprintAnalytics.avgCadenceSpm.takeIf { it > 0 }?.toString() ?: ""
+
+            val shoeStr = session.shoeName?.trim()?.takeIf { it.isNotEmpty() && !it.equals("Nenhum", ignoreCase = true) } ?: ""
+            val matchedCatalogShoe = runningShoes.firstOrNull {
+                "${it.brand} ${it.name}".trim().equals(shoeStr, ignoreCase = true) ||
+                    it.name.trim().equals(shoeStr, ignoreCase = true)
+            }
+            val accumulatedShoeKm: Float? = when {
+                matchedCatalogShoe != null && matchedCatalogShoe.totalDistanceKm > 0f -> matchedCatalogShoe.totalDistanceKm
+                sessionShoeKmSnapshot.containsKey(session.id) -> sessionShoeKmSnapshot[session.id]
+                else -> null
+            }
+            val accumulatedShoeKmStr = accumulatedShoeKm?.let { String.format(ptBr, "%.2f", it) } ?: ""
+
+            // RPE_Manual e Dor_Manual: vazio ("") se não tiverem sido preenchidos manualmente pelo usuário!
+            val rpeManualStr = if (session.rpe in 1..10) session.rpe.toString() else ""
+            val dorManualStr = session.painResponse?.trim()?.takeIf { it.isNotEmpty() } ?: ""
+
+            val rowValues = listOf(
+                dateStr,
+                hourStr,
+                athleteName.replace(";", ","),
+                classificationStr,
+                sessionTitleStr.replace(";", ","),
+                weekStr,
+                dayStr,
+                structureStr.replace(";", ","),
+                cityGpsStr,
+                mainDistKmStr,
+                mainDurationSec.toString(),
+                mainDurationMinDecStr,
+                mainDurationMmSsStr,
+                mainPaceStr,
+                totalDistKmStr,
+                totalDurationSec.toString(),
+                totalDurationMinDecStr,
+                totalDurationMmSsStr,
+                totalPaceStr,
+                avgSprintPaceStr,
+                bestSprintPaceStr,
+                runningTimeSecStr,
+                walkingTimeSecStr,
+                avgBpmStr,
+                maxBpmStr,
+                cadenceStr,
+                shoeStr.replace(";", ","),
+                accumulatedShoeKmStr,
+                rpeManualStr,
+                dorManualStr.replace(";", ",")
+            )
+            csvBuilder.append(rowValues.joinToString(";")).append("\n")
+        }
+
+        return csvBuilder.toString()
+    }
+
     fun exportHistoryToCsv(
         context: Context,
         history: List<RunningSession>,
@@ -93,161 +266,16 @@ object RunningCsvExporter {
 
         try {
             val ptBr = Locale("pt", "BR")
-            val dateFormat = SimpleDateFormat("dd/MM/yyyy", ptBr)
-            val timeFormat = SimpleDateFormat("HH:mm", ptBr)
             val fileDateFormat = SimpleDateFormat("yyyyMMdd_HHmm", ptBr)
             val timestampStr = fileDateFormat.format(Date())
             val fileName = "MAX_RUN_Analitico_${timestampStr}.csv"
 
-            val athleteName = userProfile?.nome?.ifBlank { "Atleta MAX" } ?: "Atleta MAX"
-
-            val csvBuilder = StringBuilder()
-            // BOM UTF-8 para abertura perfeita de acentos no Excel / Google Sheets
-            csvBuilder.append("\uFEFF")
-
-            // Cabeçalho Analítico (Padrão Estudo Mensal) separado em 5 grupos claros:
-            // 1. Identificação | 2. Treino Principal | 3. Sessão Total | 4. Desempenho nos Tiros | 5. Fisiologia/Equipamento
-            val columns = listOf(
-                // Identificação
-                "Data",
-                "Hora",
-                "Atleta",
-                "Semana",
-                "Dia",
-                "Estrutura",
-                "Cidade_GPS",
-                // Treino Principal
-                "Dist_Principal_KM",
-                "Tempo_Principal_Seg",
-                "Tempo_Principal_Min_Dec",
-                "Tempo_Principal_MMSS",
-                "Pace_Principal",
-                // Sessão Total
-                "Dist_Total_KM",
-                "Tempo_Total_Seg",
-                "Tempo_Total_Min_Dec",
-                "Tempo_Total_MMSS",
-                "Pace_Total",
-                // Desempenho nos Tiros
-                "Pace_Medio_Tiros",
-                "Pace_Melhor_Tiro",
-                "Tempo_Correndo_Seg",
-                "Tempo_Caminhando_Seg",
-                // Fisiologia / Equipamento
-                "BPM_Medio",
-                "BPM_Max",
-                "Cadencia_SPM",
-                "Tenis_Utilizado",
-                "KM_Acumulado_Tenis",
-                "RPE_Manual",
-                "Dor_Manual"
+            val csvContent = buildCsvContent(
+                history = history,
+                userProfile = userProfile,
+                runningShoes = runningShoes,
+                cityResolver = { session -> resolveCityFromGps(context, session) }
             )
-            csvBuilder.append(columns.joinToString(";")).append("\n")
-
-            // Ordena cronologicamente para cálculo de KM acumulado por tênis
-            val chronologicalHistory = history.sortedBy { it.date }
-            val shoeAccumulatedMetersMap = mutableMapOf<String, Long>()
-
-            // Mapeia o KM acumulado até cada sessão
-            val sessionShoeKmSnapshot = mutableMapOf<String, Float>()
-            for (s in chronologicalHistory) {
-                val sName = s.shoeName?.trim() ?: ""
-                if (sName.isNotEmpty() && !sName.equals("Nenhum", ignoreCase = true)) {
-                    val prevMeters = shoeAccumulatedMetersMap[sName] ?: 0L
-                    val newMeters = prevMeters + s.distanceMeters.toLong()
-                    shoeAccumulatedMetersMap[sName] = newMeters
-                    sessionShoeKmSnapshot[s.id] = newMeters / 1000f
-                }
-            }
-
-            for (session in history.sortedByDescending { it.date }) {
-                val dateObj = Date(session.date)
-                val dateStr = dateFormat.format(dateObj)
-                val hourStr = timeFormat.format(dateObj)
-                val weekStr = session.weekNumber.toString()
-                val dayStr = session.dayNumber.toString()
-
-                val sprintAnalytics = calculateSprintAnalytics(session, emptyList())
-                val structureStr = sprintAnalytics.structureSummary
-                val cityGpsStr = resolveCityFromGps(context, session).replace(";", ",")
-
-                // Treino Principal
-                val mainDistMeters = sprintAnalytics.mainDistMeters
-                val mainDurationSec = sprintAnalytics.mainDurationSec
-                val mainDistKmStr = String.format(ptBr, "%.2f", mainDistMeters / 1000f)
-                val mainDurationMinDecStr = String.format(ptBr, "%.2f", mainDurationSec / 60f)
-                val mainDurationMmSsStr = formatDurationMmSs(mainDurationSec)
-                val mainPaceStr = formatPaceMmSs(sprintAnalytics.mainPaceSecPerKm)
-
-                // Sessão Total
-                val totalDistMeters = sprintAnalytics.totalDistMeters
-                val totalDurationSec = sprintAnalytics.totalDurationSec
-                val totalDistKmStr = String.format(ptBr, "%.2f", totalDistMeters / 1000f)
-                val totalDurationMinDecStr = String.format(ptBr, "%.2f", totalDurationSec / 60f)
-                val totalDurationMmSsStr = formatDurationMmSs(totalDurationSec)
-                val totalPaceStr = formatPaceMmSs(sprintAnalytics.totalPaceSecPerKm)
-
-                // Desempenho nos Tiros
-                val avgSprintPaceStr = formatPaceMmSs(sprintAnalytics.avgSprintPaceSecPerKm)
-                val bestSprintPaceStr = formatPaceMmSs(sprintAnalytics.bestSprintPaceSecPerKm)
-                val runningTimeSecStr = sprintAnalytics.runningTimeSec.toString()
-                val walkingTimeSecStr = sprintAnalytics.walkingTimeSec.toString()
-
-                // Fisiologia / Equipamento
-                val avgBpmStr = session.avgHr?.takeIf { it > 0 }?.toString() ?: ""
-                val maxBpmStr = session.maxHr?.takeIf { it > 0 }?.toString() ?: ""
-                val cadenceStr = sprintAnalytics.avgCadenceSpm.takeIf { it > 0 }?.toString() ?: ""
-
-                val shoeStr = session.shoeName?.trim()?.takeIf { it.isNotEmpty() && !it.equals("Nenhum", ignoreCase = true) } ?: ""
-                val matchedCatalogShoe = runningShoes.firstOrNull {
-                    "${it.brand} ${it.name}".trim().equals(shoeStr, ignoreCase = true) ||
-                        it.name.trim().equals(shoeStr, ignoreCase = true)
-                }
-                val accumulatedShoeKm: Float? = when {
-                    matchedCatalogShoe != null && matchedCatalogShoe.totalDistanceKm > 0f -> matchedCatalogShoe.totalDistanceKm
-                    sessionShoeKmSnapshot.containsKey(session.id) -> sessionShoeKmSnapshot[session.id]
-                    else -> null
-                }
-                val accumulatedShoeKmStr = accumulatedShoeKm?.let { String.format(ptBr, "%.2f", it) } ?: ""
-
-                // RPE_Manual e Dor_Manual: vazio ("") se não tiverem sido preenchidos manualmente pelo usuário!
-                val rpeManualStr = if (session.rpe in 1..10) session.rpe.toString() else ""
-                val dorManualStr = session.painResponse?.trim()?.takeIf { it.isNotEmpty() } ?: ""
-
-                val rowValues = listOf(
-                    dateStr,
-                    hourStr,
-                    athleteName.replace(";", ","),
-                    weekStr,
-                    dayStr,
-                    structureStr.replace(";", ","),
-                    cityGpsStr,
-                    mainDistKmStr,
-                    mainDurationSec.toString(),
-                    mainDurationMinDecStr,
-                    mainDurationMmSsStr,
-                    mainPaceStr,
-                    totalDistKmStr,
-                    totalDurationSec.toString(),
-                    totalDurationMinDecStr,
-                    totalDurationMmSsStr,
-                    totalPaceStr,
-                    avgSprintPaceStr,
-                    bestSprintPaceStr,
-                    runningTimeSecStr,
-                    walkingTimeSecStr,
-                    avgBpmStr,
-                    maxBpmStr,
-                    cadenceStr,
-                    shoeStr.replace(";", ","),
-                    accumulatedShoeKmStr,
-                    rpeManualStr,
-                    dorManualStr.replace(";", ",")
-                )
-                csvBuilder.append(rowValues.joinToString(";")).append("\n")
-            }
-
-            val csvContent = csvBuilder.toString()
             val bytes = csvContent.toByteArray(Charsets.UTF_8)
             val relativeSubfolder = AppExportPaths.DOWNLOADS_CSV_RELATIVE_PATH
 

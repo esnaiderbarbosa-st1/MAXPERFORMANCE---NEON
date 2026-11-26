@@ -106,6 +106,7 @@ fun RunningHistoryScreen(viewModel: MainViewModel) {
     var sessionToConvertOfficialRace by remember { mutableStateOf<com.example.data.model.RunningSession?>(null) }
     var selectedGymSessionDetail by remember { mutableStateOf<com.example.data.model.GymWorkoutSession?>(null) }
     var sessionForShoeEdit by remember { mutableStateOf<com.example.data.model.RunningSession?>(null) }
+    var sessionToClassify by remember { mutableStateOf<com.example.data.model.RunningSession?>(null) }
     var runningSessionToDelete by remember { mutableStateOf<com.example.data.model.RunningSession?>(null) }
     var gymSessionToDelete by remember { mutableStateOf<com.example.data.model.GymWorkoutSession?>(null) }
     var expandedMobilitySessionIds by remember { mutableStateOf(setOf<String>()) }
@@ -488,6 +489,10 @@ fun RunningHistoryScreen(viewModel: MainViewModel) {
                                 runningShoes = runningShoes,
                                 isSavedAsOfficialRace = isSavedOfficial,
                                 onSaveAsOfficialRaceClick = null,
+                                onClassifySessionClick = {
+                                    sessionToClassify = session
+                                    com.example.utils.AudioSynth.playTickSound()
+                                },
                                 onSessionClick = {
                                     viewModel.selectedDetailSession.value = session
                                     viewModel.navigateToScreen(AppScreen.RUNNING_DETAIL)
@@ -1027,6 +1032,31 @@ fun RunningHistoryScreen(viewModel: MainViewModel) {
                     ).show()
                 }
                 sessionForShoeEdit = null
+            }
+        )
+    }
+
+    sessionToClassify?.let { target ->
+        com.example.ui.components.RunSessionClassificationDialog(
+            session = target,
+            onDismiss = { sessionToClassify = null },
+            onConfirm = { isRace, raceName ->
+                viewModel.updateRunningSessionClassification(
+                    sessionId = target.id,
+                    isRace = isRace,
+                    raceName = raceName
+                )
+                sessionToClassify = null
+                val feedback = if (isRace) {
+                    if (!raceName.isNullOrBlank()) "Marcada como Prova: $raceName" else "Sessão marcada como Prova"
+                } else {
+                    "Sessão marcada como Treino"
+                }
+                android.widget.Toast.makeText(
+                    context,
+                    feedback,
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
             }
         )
     }

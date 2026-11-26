@@ -64,6 +64,7 @@ import com.example.data.model.GpsTrackPoint
 import com.example.data.model.RoutePointItem
 import com.example.data.model.RunningSession
 import com.example.data.model.calculateSprintAnalytics
+import com.example.data.model.isClassifiedAsRace
 import com.example.data.model.isSimulatedOrTestSession
 import com.example.data.model.resolveSessionRoutePointsWithPhases
 import com.example.data.model.toGpsTrackPoints
@@ -643,8 +644,16 @@ fun ShareCardEditorScreen(viewModel: MainViewModel) {
                                         shadow = cardTextShadow
                                     )
                                 )
+                                val headerSubtitleText = if (session.isClassifiedAsRace()) {
+                                    val displayTitle = com.example.engine.RunningProgramManager.getDisplayTitleForSession(session).uppercase(Locale("pt", "BR"))
+                                    if (displayTitle.startsWith("PROVA")) "$displayTitle • MAX RUN" else "PROVA • $displayTitle"
+                                } else if (com.example.engine.RunningProgramManager.isEffectiveFreeRun(session)) {
+                                    "CORRIDA LIVRE • MAX RUN"
+                                } else {
+                                    "SEMANA ${session.weekNumber} • DIA ${session.dayNumber} • ${if (session.isGentleMode) "MODO LEVE" else "COUCH TO 5K"}"
+                                }
                                 Text(
-                                    text = "SEMANA ${session.weekNumber} • DIA ${session.dayNumber} • ${if (session.isGentleMode) "MODO LEVE" else "COUCH TO 5K"}",
+                                    text = headerSubtitleText,
                                     color = getBlockTextColor("header").copy(alpha = 0.9f),
                                     fontSize = (15f * headerTransform.fontScale).sp,
                                     fontWeight = FontWeight.Bold,
@@ -934,8 +943,15 @@ fun ShareCardEditorScreen(viewModel: MainViewModel) {
                             previewScale = previewScale,
                             onTransformChange = { updateProgress(it) }
                         ) {
+                            val progressLabelText = if (session.isClassifiedAsRace()) {
+                                "PROVA • ${com.example.engine.RunningProgramManager.getDisplayTitleForSession(session).uppercase(Locale("pt", "BR"))}   •   $workoutStructureSummary"
+                            } else if (com.example.engine.RunningProgramManager.isEffectiveFreeRun(session)) {
+                                "CORRIDA LIVRE   •   $workoutStructureSummary"
+                            } else {
+                                "SEMANA ${session.weekNumber} • DIA ${session.dayNumber}   •   $workoutStructureSummary"
+                            }
                             Text(
-                                text = "SEMANA ${session.weekNumber} • DIA ${session.dayNumber}   •   $workoutStructureSummary",
+                                text = progressLabelText,
                                 color = getBlockTextColor("progress"),
                                 fontSize = (24f * progressTransform.fontScale).sp,
                                 fontWeight = FontWeight.Bold,
@@ -2296,9 +2312,17 @@ fun renderCardContentToCanvas(
 
     // 0. Header Block
     if (blockVisibility["block_header_visible"] != false) {
+        val headerSubtitleBitmap = if (session.isClassifiedAsRace()) {
+            val displayTitle = com.example.engine.RunningProgramManager.getDisplayTitleForSession(session).uppercase(ptBr)
+            if (displayTitle.startsWith("PROVA")) "$displayTitle • MAX RUN" else "PROVA • $displayTitle"
+        } else if (com.example.engine.RunningProgramManager.isEffectiveFreeRun(session)) {
+            "CORRIDA LIVRE • MAX RUN"
+        } else {
+            "SEMANA ${session.weekNumber} • DIA ${session.dayNumber} • ${if (session.isGentleMode) "MODO LEVE" else "COUCH TO 5K"}"
+        }
         drawBlockText(
             title = "MAX PERFORMANCE",
-            subtitle = "SEMANA ${session.weekNumber} • DIA ${session.dayNumber} • ${if (session.isGentleMode) "MODO LEVE" else "COUCH TO 5K"}",
+            subtitle = headerSubtitleBitmap,
             transform = headerTransform,
             textColor = headerColor,
             fontScale = headerTransform.fontScale,
@@ -2388,8 +2412,15 @@ fun renderCardContentToCanvas(
 
     // 5. Progress Block
     if (blockVisibility["block_progress_visible"] != false) {
+        val progressBitmapTitle = if (session.isClassifiedAsRace()) {
+            "PROVA • ${com.example.engine.RunningProgramManager.getDisplayTitleForSession(session).uppercase(ptBr)}   •   $workoutStructureSummary"
+        } else if (com.example.engine.RunningProgramManager.isEffectiveFreeRun(session)) {
+            "CORRIDA LIVRE   •   $workoutStructureSummary"
+        } else {
+            "SEMANA ${session.weekNumber} • DIA ${session.dayNumber}   •   $workoutStructureSummary"
+        }
         drawBlockText(
-            title = "SEMANA ${session.weekNumber} • DIA ${session.dayNumber}   •   $workoutStructureSummary",
+            title = progressBitmapTitle,
             subtitle = null,
             transform = progressTransform,
             textColor = progressColor,

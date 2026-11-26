@@ -364,6 +364,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateRunningSessionClassification(
+        sessionId: String,
+        isRace: Boolean,
+        raceName: String?
+    ) {
+        viewModelScope.launch {
+            val currentSession = runningSessions.value.find { it.id == sessionId }
+                ?: selectedDetailSession.value?.takeIf { it.id == sessionId }
+                ?: return@launch
+            val updatedSession = currentSession.withRaceClassification(
+                isRace = isRace,
+                raceName = raceName
+            )
+            repository.saveRunningSession(updatedSession)
+            if (selectedDetailSession.value?.id == sessionId) {
+                selectedDetailSession.value = updatedSession
+            }
+            if (selectedShareSession.value?.id == sessionId) {
+                selectedShareSession.value = updatedSession
+            }
+        }
+    }
+
     fun getSessionById(sessionId: String): RunningSession? {
         return runningSessions.value.find { it.id == sessionId }
     }
