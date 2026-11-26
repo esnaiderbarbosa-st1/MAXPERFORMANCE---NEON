@@ -251,7 +251,7 @@ object RunningCsvExporter {
             val bytes = csvContent.toByteArray(Charsets.UTF_8)
             val relativeSubfolder = AppExportPaths.DOWNLOADS_CSV_RELATIVE_PATH
 
-            // 1. Gravar na pasta pública Download/MAXPerformanceRun/CSV/
+            // 1. Gravar na pasta pública Download/MAXPERFORMANCE/CSV/
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val contentValues = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)

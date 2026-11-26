@@ -75,13 +75,7 @@ class FitnessRepository(private val db: AppDatabase) {
         db.userDao().insertProfile(updated)
     }
 
-    // 6. Classrooms
-    val classroomsFlow: Flow<List<Classroom>> = db.classroomDao().getAllClassrooms()
-
-    // 7. Feed Items
-    val feedFlow: Flow<List<FeedItem>> = db.feedDao().getFeedItems()
-
-    // 8. Pending Sync Actions Flow
+    // 6. Pending Sync Actions Flow
     val pendingSyncActionsFlow: Flow<List<PendingSyncAction>> = db.syncDao().getPendingActionsFlow()
 
     // 9. Beta Evaluations Flow
@@ -278,56 +272,6 @@ class FitnessRepository(private val db: AppDatabase) {
         db.cardioDao().deleteCardioById(id)
     }
 
-    suspend fun joinClassroom(code: String) {
-        // Create joined classroom locally
-        val newClass = Classroom(
-            id = "joined_${UUID.randomUUID()}",
-            name = "Classe Código $code",
-            professorId = "prof_code",
-            professorName = "Professor Codificado",
-            studentIdsJson = "[]",
-            accessCode = code
-        )
-        db.classroomDao().insertClassroom(newClass)
-        
-        // Queue sync
-        queueSyncAction("JOIN_CLASSROOM", code)
-    }
-
-    suspend fun createClassroom(name: String) {
-        val newClass = Classroom(
-            id = "c_${UUID.randomUUID()}",
-            name = name,
-            professorId = "1",
-            professorName = "Professor Teste",
-            studentIdsJson = "[]",
-            accessCode = (10000000..99999999).random().toString()
-        )
-        db.classroomDao().insertClassroom(newClass)
-        queueSyncAction("CREATE_CLASSROOM", name)
-    }
-
-    suspend fun deleteClassroom(id: String) {
-        db.classroomDao().deleteClassroomById(id)
-        queueSyncAction("DELETE_CLASSROOM", id)
-    }
-
-    suspend fun sendChatMessage(classroomId: String, text: String, senderName: String) {
-        val msg = ChatMessage(
-            id = "msg_${UUID.randomUUID()}",
-            classroomId = classroomId,
-            senderId = "1",
-            senderName = senderName,
-            recipientId = null,
-            text = text,
-            createdAt = System.currentTimeMillis()
-        )
-        db.chatDao().insertMessage(msg)
-        
-        val payload = moshi.adapter(ChatMessage::class.java).toJson(msg)
-        queueSyncAction("SEND_MESSAGE", payload)
-    }
-
     fun getChatMessagesFlow(classroomId: String): Flow<List<ChatMessage>> {
         return db.chatDao().getMessagesForClassroom(classroomId)
     }
@@ -347,24 +291,6 @@ class FitnessRepository(private val db: AppDatabase) {
         
         val payload = moshi.adapter(FeedItem::class.java).toJson(item)
         queueSyncAction("ADD_FEED_ITEM", payload)
-    }
-
-    suspend fun toggleLikeFeedItem(item: FeedItem) {
-        val updated = item.copy(
-            hasUserLiked = !item.hasUserLiked,
-            likesCount = if (item.hasUserLiked) item.likesCount - 1 else item.likesCount + 1
-        )
-        db.feedDao().insertFeedItem(updated)
-        // Simple local update, skip sync queue for performance
-    }
-
-    suspend fun addCommentToFeedItem(item: FeedItem, commentText: String) {
-        // Parse comments
-        val commentsList = JsonUtils.parseStringList(item.commentsJson).toMutableList()
-        commentsList.add(commentText)
-        
-        val updated = item.copy(commentsJson = JsonUtils.serializeStringList(commentsList))
-        db.feedDao().insertFeedItem(updated)
     }
 
     // --- PRIVATE SYNC QUEUE HELPER ---
@@ -391,55 +317,6 @@ class FitnessRepository(private val db: AppDatabase) {
         // Garante que as novas máquinas e exercícios nativos estejam sincronizados
         runCatching {
             com.example.utils.DeveloperTools.seedExercises(db)
-        }
-        
-        // Pre-populate 1 initial classroom if empty
-        val classes = db.classroomDao().getAllClassrooms().first()
-        if (classes.isEmpty()) {
-            db.classroomDao().insertClassroom(
-                Classroom(
-                    id = "class_mestre",
-                    name = "Turma Lendários",
-                    professorId = "prof_ricardo",
-                    professorName = "Prof. Ricardo",
-                    studentIdsJson = "[\"1\"]",
-                    accessCode = "10293847"
-                )
-            )
-            // Pre-populate some initial messages
-            db.chatDao().insertMessage(
-                ChatMessage("m1", "class_mestre", "prof_ricardo", "Prof. Ricardo", null, "Olá pessoal! Sejam bem-vindos à nossa turma de alta performance.", System.currentTimeMillis() - 1000000)
-            )
-            db.chatDao().insertMessage(
-                ChatMessage("m2", "class_mestre", "1", "Usuário Teste", null, "Fala professor! Pronto para o treino de hoje.", System.currentTimeMillis() - 500000)
-            )
-        }
-
-        // Pre-populate feed if empty
-        val feedItems = db.feedDao().getFeedItems().first()
-        if (feedItems.isEmpty()) {
-            db.feedDao().insertFeedItem(
-                FeedItem(
-                    id = "feed_init1",
-                    authorName = "Prof. Ricardo",
-                    text = "A constância supera o talento. Treino de peito concluído com sucesso hoje! 🚀 #Foco #MaxPerformance",
-                    imageUri = null,
-                    likesCount = 4,
-                    hasUserLiked = false,
-                    commentsJson = "[\"Grande mestre! Inspiração total.\", \"Amanhã sou eu!\"]"
-                )
-            )
-            db.feedDao().insertFeedItem(
-                FeedItem(
-                    id = "feed_init2",
-                    authorName = "Rodrigo Silva",
-                    text = "Novo recorde pessoal no Agachamento Livre: 140kg! A planilha de força funciona demais.",
-                    imageUri = null,
-                    likesCount = 8,
-                    hasUserLiked = true,
-                    commentsJson = "[\"Monstro demais!\", \"Excelente marca! Pegada pesada.\"]"
-                )
-            )
         }
     }
 }

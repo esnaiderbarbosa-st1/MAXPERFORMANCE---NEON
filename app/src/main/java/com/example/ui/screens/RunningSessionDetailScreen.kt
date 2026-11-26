@@ -1483,6 +1483,7 @@ fun RunningSessionDetailScreen(viewModel: MainViewModel) {
                     allRunningSessions = allRunningSessions,
                     athleteAge = userProfile.idade,
                     baselinePaceMinPerKm = userProfile.baselinePaceMinPerKm,
+                    calibratedMaxHrBpm = userProfile.fcMaxCalibradaBpm,
                     onApplyNewBaselinePace = { newPaceMin ->
                         viewModel.saveRunnerBaselinePace(newPaceMin)
                         android.widget.Toast.makeText(

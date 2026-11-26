@@ -730,6 +730,8 @@ object RunTracker {
     private var stepCounterBaseline: Int? = null
     private var accumulatedRealSteps: Int = 0
     private var lastStepEventMs: Long? = null
+    @Volatile
+    private var needsStepBaselineReanchor: Boolean = false
     private var anchorPoint: GpsPoint? = null
     private var accumulatedDistanceMeters: Double = 0.0
     private var lastValidNanos: Long? = null
@@ -749,6 +751,13 @@ object RunTracker {
             if (event.sensor?.type == android.hardware.Sensor.TYPE_STEP_COUNTER && event.values.isNotEmpty()) {
                 val rawSteps = event.values[0].toInt()
                 if (rawSteps > 0) {
+                    if (needsStepBaselineReanchor) {
+                        // Descarta passos acumulados no sensor de hardware enquanto a sessão estava pausada
+                        stepCounterBaseline = (rawSteps - accumulatedRealSteps).coerceAtLeast(0)
+                        needsStepBaselineReanchor = false
+                        lastStepEventMs = System.currentTimeMillis()
+                        return
+                    }
                     val base = stepCounterBaseline
                     if (base == null) {
                         stepCounterBaseline = rawSteps
@@ -1202,6 +1211,7 @@ object RunTracker {
 
             isTracking = true
             isPaused = false
+            needsStepBaselineReanchor = accumulatedRealSteps > 0
             // JAMAIS utiliza fusedLocationClient.lastLocation / getLastKnownLocation como ponto zero da rota!
             fusedLocationClient?.requestLocationUpdates(
                 locationRequest,
@@ -1230,11 +1240,15 @@ object RunTracker {
                 }
             }
             // Inicia StepCadenceTracker (TYPE_STEP_DETECTOR) para Sensor Fusion anti-drift
-            runCatching { com.example.utils.StepCadenceTracker.start(appCtx) }
+            runCatching {
+                com.example.utils.StepCadenceTracker.setPaused(false)
+                com.example.utils.StepCadenceTracker.start(appCtx)
+            }
             startWatchdog()
         }.onFailure { e ->
             isTracking = false
             isPaused = false
+            needsStepBaselineReanchor = false
             if (e is SecurityException) {
                 _state.update { it.copy(status = RunTrackerStatus.NO_PERMISSION) }
             }
@@ -1243,14 +1257,18 @@ object RunTracker {
 
     fun pause() {
         isPaused = true
+        needsStepBaselineReanchor = true
+        runCatching { com.example.utils.StepCadenceTracker.setPaused(true) }
     }
 
     fun resume() {
         isPaused = false
+        needsStepBaselineReanchor = true
         anchorPoint = null
         lastSegmentBearingDegrees = null
         lastStepEventMs = null
         recentPaceSamples.clear()
+        runCatching { com.example.utils.StepCadenceTracker.setPaused(false) }
     }
 
     fun stop() {
@@ -1269,6 +1287,7 @@ object RunTracker {
         runCatching { com.example.utils.StepCadenceTracker.stop() }
         isTracking = false
         isPaused = false
+        needsStepBaselineReanchor = false
         anchorPoint = null
         lastSegmentBearingDegrees = null
         lastFusedLocationMs = 0L
@@ -1284,6 +1303,7 @@ object RunTracker {
         stepCounterBaseline = null
         accumulatedRealSteps = 0
         lastStepEventMs = null
+        needsStepBaselineReanchor = false
         anchorPoint = null
         lastSegmentBearingDegrees = null
         lastSnappedLapCount = 0

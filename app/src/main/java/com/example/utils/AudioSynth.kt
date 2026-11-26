@@ -133,26 +133,32 @@ object AudioSynth {
                             .build()
                     )
                     .setWillPauseWhenDucked(false)
+                    .setAcceptsDelayedFocusGain(false)
                     .setOnAudioFocusChangeListener(sharedFocusChangeListener, mainHandler)
                     .build()
-                audioManager.requestAudioFocus(focusRequest)
-                lastFocusRequest = focusRequest
-                if (!activeFocusRequests.contains(focusRequest)) {
-                    activeFocusRequests.add(focusRequest)
+                val grantResult = audioManager.requestAudioFocus(focusRequest)
+                if (grantResult == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                    lastFocusRequest = focusRequest
+                    if (!activeFocusRequests.contains(focusRequest)) {
+                        activeFocusRequests.add(focusRequest)
+                    }
+                    lastFocusListener = sharedFocusChangeListener
+                    isFocusRequested = true
+                    armSafetyWatchdog(appCtx)
                 }
-                lastFocusListener = sharedFocusChangeListener
-                isFocusRequested = true
             } else {
                 @Suppress("DEPRECATION")
-                audioManager.requestAudioFocus(
+                val grantResult = audioManager.requestAudioFocus(
                     sharedFocusChangeListener,
                     AudioManager.STREAM_MUSIC,
                     AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
                 )
-                lastFocusListener = sharedFocusChangeListener
-                isFocusRequested = true
+                if (grantResult == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                    lastFocusListener = sharedFocusChangeListener
+                    isFocusRequested = true
+                    armSafetyWatchdog(appCtx)
+                }
             }
-            armSafetyWatchdog(appCtx)
         } catch (e: Exception) {
             Log.w(TAG, "Erro ao solicitar AudioFocus no AudioSynth", e)
         }
@@ -176,8 +182,6 @@ object AudioSynth {
                         audioManager.abandonAudioFocusRequest(it)
                     } catch (_: Exception) {}
                 }
-                @Suppress("DEPRECATION")
-                audioManager.abandonAudioFocus(lastFocusListener ?: sharedFocusChangeListener)
             } else {
                 @Suppress("DEPRECATION")
                 audioManager.abandonAudioFocus(lastFocusListener ?: sharedFocusChangeListener)

@@ -1006,6 +1006,53 @@ object RunningProgramManager {
         return FreeRunRaceMode.fromSessionType(sessionType) != null
     }
 
+    /**
+     * Determina se o modal de perguntas pré-treino ("Prontidão Expressa" / anamnese) deve ser exibido antes de iniciar.
+     * - Retorna `false` ("Instant GO") para Corrida Livre (`FREE_RUN`), Modos Prova (`RACE_5K`, `RACE_10K`),
+     *   Rodagem Livre (`FREE_REGENERATIVE` / `free_regenerative`), planos sem semana estruturada (`weekNumber <= 0`,
+     *   que exibem subtítulo "Corrida Livre") ou qualquer treino cujo título/identificador indique Corrida Livre / Livre / Prova 5K / 10K.
+     * - Retorna `true` exclusivamente para treinos estruturados da planilha e demais sessões guiadas.
+     */
+    fun shouldShowPreRunAnamnesis(
+        freeRaceMode: FreeRunRaceMode? = null,
+        sessionType: String? = null,
+        planTitle: String? = null,
+        displayTitle: String? = null,
+        weekNumber: Int? = null,
+        programId: String? = null
+    ): Boolean {
+        if (freeRaceMode != null) return false
+        if (isFreeOrRaceSessionType(sessionType)) return false
+
+        val normalizedType = sessionType?.trim()?.uppercase(java.util.Locale.ROOT).orEmpty()
+        if (normalizedType == "FREE_REGENERATIVE" || normalizedType.contains("FREE_RUN")) return false
+
+        val normalizedProgramId = programId?.trim()?.lowercase(java.util.Locale.ROOT).orEmpty()
+        if (normalizedProgramId == "free_regenerative" || normalizedProgramId.contains("free_run")) return false
+
+        if (weekNumber != null && weekNumber <= 0 && normalizedType != "GENTLE_WALK") return false
+
+        fun indicatesFreeOrRaceTitle(rawTitle: String?): Boolean {
+            if (rawTitle.isNullOrBlank()) return false
+            val t = rawTitle.trim().lowercase(java.util.Locale.ROOT)
+            return t == "livre" ||
+                t == "5k" ||
+                t == "10k" ||
+                t.contains("corrida livre") ||
+                t.contains("rodagem livre") ||
+                t.contains("prova 5k") ||
+                t.contains("prova 10k") ||
+                t.contains("meta 5k") ||
+                t.contains("meta 10k") ||
+                Regex("\\blivre\\b").containsMatchIn(t)
+        }
+
+        if (indicatesFreeOrRaceTitle(planTitle)) return false
+        if (indicatesFreeOrRaceTitle(displayTitle)) return false
+
+        return true
+    }
+
     fun isEffectiveFreeRun(session: RunningSession): Boolean {
         if (session.isGentleMode || session.sessionType.equals("GENTLE_WALK", ignoreCase = true)) return false
         if (session.sessionType.equals("FREE_RUN", ignoreCase = true)) return true

@@ -7,7 +7,7 @@ import android.os.Environment
  * PDFs e planilhas CSV do aplicativo no armazenamento compartilhado do Android.
  */
 object AppExportPaths {
-    const val PUBLIC_FOLDER_NAME = "MAXPerformanceRun"
+    const val PUBLIC_FOLDER_NAME = "MAXPERFORMANCE"
 
     val PICTURES_RELATIVE_PATH: String = "${Environment.DIRECTORY_PICTURES}/$PUBLIC_FOLDER_NAME"
     val PICTURES_CAPTURES_RELATIVE_PATH: String = "${Environment.DIRECTORY_PICTURES}/$PUBLIC_FOLDER_NAME/Capturas"

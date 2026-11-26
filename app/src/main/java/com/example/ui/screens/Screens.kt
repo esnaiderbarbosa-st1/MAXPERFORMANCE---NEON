@@ -586,6 +586,7 @@ fun HomeScreen(viewModel: MainViewModel) {
                     gymWorkoutSessions,
                     runningSessions,
                     profile.idade,
+                    profile.fcMaxCalibradaBpm,
                     selectedRunProgramId,
                     fatigueAdvisoryState.consecutiveDays
                 ) {
@@ -595,7 +596,8 @@ fun HomeScreen(viewModel: MainViewModel) {
                         runningHistory = runningSessions,
                         athleteAge = profile.idade,
                         selectedRunningProgramId = selectedRunProgramId,
-                        consecutiveDays = fatigueAdvisoryState.consecutiveDays
+                        consecutiveDays = fatigueAdvisoryState.consecutiveDays,
+                        calibratedMaxHrBpm = profile.fcMaxCalibradaBpm
                     )
                 }
 

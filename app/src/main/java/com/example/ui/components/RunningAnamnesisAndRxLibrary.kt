@@ -359,7 +359,8 @@ object RunnerAnamnesisManager {
         profile: RunnerAnamnesisProfile,
         athleteAge: Int,
         history: List<RunningSession>,
-        baselinePaceMinPerKm: Float?
+        baselinePaceMinPerKm: Float?,
+        calibratedMaxHrBpm: Int? = null
     ): PhysiologicalCalibrationSummary {
         // Verifica se há um 5K ou 3K real mais rápido no histórico se o perfil ainda não foi configurado manualmente
         val bestHistory5kSec = history
@@ -402,7 +403,8 @@ object RunnerAnamnesisManager {
         val lt2PaceSec = (vamPaceSecPerKm / 0.87).roundToInt().coerceIn(175, 660)
         val lt1PaceSec = (vamPaceSecPerKm / 0.76).roundToInt().coerceIn(200, 750)
 
-        val calibratedMaxHr = maxOf(220 - athleteAge.coerceIn(18, 85), 190)
+        val calibratedMaxHr = calibratedMaxHrBpm?.takeIf { it in 100..235 }
+            ?: maxOf(220 - athleteAge.coerceIn(18, 85), 190)
         val lt1Bpm = (calibratedMaxHr * 0.72f).roundToInt()
         val lt2Bpm = (calibratedMaxHr * 0.85f).roundToInt()
 
@@ -1418,6 +1420,7 @@ fun RunnerAnamnesisModal(
     athleteAge: Int,
     runningHistory: List<RunningSession>,
     baselinePaceMinPerKm: Float?,
+    calibratedMaxHrBpm: Int? = null,
     onSaveProfile: (RunnerAnamnesisProfile, Float, String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1451,12 +1454,13 @@ fun RunnerAnamnesisModal(
         )
     }
 
-    val liveCalibration = remember(draftProfile, athleteAge, runningHistory, baselinePaceMinPerKm) {
+    val liveCalibration = remember(draftProfile, athleteAge, runningHistory, baselinePaceMinPerKm, calibratedMaxHrBpm) {
         RunnerAnamnesisManager.calculateCalibration(
             profile = draftProfile,
             athleteAge = athleteAge,
             history = runningHistory,
-            baselinePaceMinPerKm = baselinePaceMinPerKm
+            baselinePaceMinPerKm = baselinePaceMinPerKm,
+            calibratedMaxHrBpm = calibratedMaxHrBpm
         )
     }
 
@@ -2582,7 +2586,8 @@ object HybridReadinessEngine {
         runningHistory: List<RunningSession>,
         athleteAge: Int = 40,
         selectedRunningProgramId: String = "run_30m",
-        consecutiveDays: Int = 0
+        consecutiveDays: Int = 0,
+        calibratedMaxHrBpm: Int? = null
     ): HybridReadinessReport {
         val now = System.currentTimeMillis()
         val window48hStart = now - 48L * 3600L * 1000L
@@ -2703,7 +2708,8 @@ object HybridReadinessEngine {
         val effectiveMaxHr = com.example.data.model.calculateEffectiveMaxHr(
             ageYears = athleteAge.takeIf { it in 10..100 },
             sessionMaxHrBpm = lastRun?.maxHr,
-            historicalPeakHrBpm = runningHistory.mapNotNull { it.maxHr }.maxOrNull()
+            historicalPeakHrBpm = runningHistory.mapNotNull { it.maxHr }.maxOrNull(),
+            calibratedMaxHrBpm = calibratedMaxHrBpm
         )
 
         var accumulatedZ4Z5Sec = 0
@@ -3266,7 +3272,8 @@ fun evaluateRunnaPaceEvolution(
     allRunningSessions: List<RunningSession>,
     athleteAge: Int,
     anamnesisProfile: RunnerAnamnesisProfile,
-    baselinePaceMinPerKm: Float?
+    baselinePaceMinPerKm: Float?,
+    calibratedMaxHrBpm: Int? = null
 ): RunnaPaceEvolutionResult? {
     if (session.isGentleMode || session.distanceMeters < 400 || session.durationSec < 120) return null
 
@@ -3276,13 +3283,15 @@ fun evaluateRunnaPaceEvolution(
         profile = anamnesisProfile,
         athleteAge = athleteAge,
         history = historyBeforeSession,
-        baselinePaceMinPerKm = baselinePaceMinPerKm
+        baselinePaceMinPerKm = baselinePaceMinPerKm,
+        calibratedMaxHrBpm = calibratedMaxHrBpm
     )
 
     val effectiveMaxHr = com.example.data.model.calculateEffectiveMaxHr(
         ageYears = athleteAge.takeIf { it in 10..100 },
         sessionMaxHrBpm = session.maxHr,
-        historicalPeakHrBpm = allRunningSessions.mapNotNull { it.maxHr }.maxOrNull()
+        historicalPeakHrBpm = allRunningSessions.mapNotNull { it.maxHr }.maxOrNull(),
+        calibratedMaxHrBpm = calibratedMaxHrBpm
     )
 
     val hasValidSprints = !sprintAnalytics.isContinuousRunMode && sprintAnalytics.avgSprintPaceSecPerKm in 150..450
@@ -3364,7 +3373,8 @@ fun RunnaPaceEvolutionBanner(
     athleteAge: Int,
     baselinePaceMinPerKm: Float?,
     onApplyNewBaselinePace: (Float) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    calibratedMaxHrBpm: Int? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var calibrationVersion by remember { mutableIntStateOf(0) }
@@ -3382,7 +3392,8 @@ fun RunnaPaceEvolutionBanner(
         sprintAnalytics.avgSprintPaceSecPerKm,
         sprintAnalytics.isContinuousRunMode,
         anamnesisProfile,
-        baselinePaceMinPerKm
+        baselinePaceMinPerKm,
+        calibratedMaxHrBpm
     ) {
         evaluateRunnaPaceEvolution(
             session = session,
@@ -3390,7 +3401,8 @@ fun RunnaPaceEvolutionBanner(
             allRunningSessions = allRunningSessions,
             athleteAge = athleteAge,
             anamnesisProfile = anamnesisProfile,
-            baselinePaceMinPerKm = baselinePaceMinPerKm
+            baselinePaceMinPerKm = baselinePaceMinPerKm,
+            calibratedMaxHrBpm = calibratedMaxHrBpm
         )
     }
 

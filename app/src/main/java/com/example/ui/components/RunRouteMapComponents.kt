@@ -1643,6 +1643,64 @@ object Cine3DCameraMath {
  */
 object RunRoutePhotoManager {
     private const val PREFS_NAME = "max_run_route_photos_prefs"
+    private const val PENDING_CAPTURE_PREFIX = "pending_live_cam_"
+
+    fun savePendingLiveCameraCapturePath(
+        context: android.content.Context,
+        sessionId: String,
+        filePath: String
+    ) {
+        if (sessionId.isBlank() || filePath.isBlank()) return
+        context.applicationContext
+            .getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+            .edit()
+            .putString("$PENDING_CAPTURE_PREFIX$sessionId", filePath)
+            .apply()
+    }
+
+    fun loadPendingLiveCameraCapturePath(
+        context: android.content.Context,
+        sessionId: String
+    ): String? {
+        if (sessionId.isBlank()) return null
+        return context.applicationContext
+            .getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+            .getString("$PENDING_CAPTURE_PREFIX$sessionId", null)
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    fun clearPendingLiveCameraCapturePath(
+        context: android.content.Context,
+        sessionId: String
+    ) {
+        if (sessionId.isBlank()) return
+        context.applicationContext
+            .getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+            .edit()
+            .remove("$PENDING_CAPTURE_PREFIX$sessionId")
+            .apply()
+    }
+
+    fun migratePhotosBetweenSessionsIfNeeded(
+        context: android.content.Context,
+        fromSessionId: String,
+        toSessionId: String
+    ) {
+        if (fromSessionId.isBlank() || toSessionId.isBlank() || fromSessionId == toSessionId) return
+        val sourcePhotos = loadPhotosForSession(context, fromSessionId)
+        if (sourcePhotos.isEmpty()) return
+        val targetPhotos = loadPhotosForSession(context, toSessionId)
+        val merged = (targetPhotos + sourcePhotos)
+            .distinctBy { it.id }
+            .sortedBy { it.progress }
+        savePhotosForSession(context, toSessionId, merged)
+        context.applicationContext
+            .getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+            .edit()
+            .remove("photos_$fromSessionId")
+            .remove("$PENDING_CAPTURE_PREFIX$fromSessionId")
+            .apply()
+    }
 
     fun loadPhotosForSession(context: android.content.Context, sessionId: String): List<RunRoutePhotoPin> {
         if (sessionId.isBlank()) return emptyList()

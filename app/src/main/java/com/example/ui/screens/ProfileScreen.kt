@@ -78,12 +78,13 @@ fun ProfileScreen(
     val anamnesisProfile = remember(context, anamnesisVersion, profile.baselinePaceMinPerKm) {
         com.example.ui.components.RunnerAnamnesisManager.loadProfile(context, profile.baselinePaceMinPerKm)
     }
-    val runnerCalibration = remember(anamnesisProfile, profile.idade, runningSessions, profile.baselinePaceMinPerKm) {
+    val runnerCalibration = remember(anamnesisProfile, profile.idade, runningSessions, profile.baselinePaceMinPerKm, profile.fcMaxCalibradaBpm) {
         com.example.ui.components.RunnerAnamnesisManager.calculateCalibration(
             profile = anamnesisProfile,
             athleteAge = profile.idade,
             history = runningSessions,
-            baselinePaceMinPerKm = profile.baselinePaceMinPerKm
+            baselinePaceMinPerKm = profile.baselinePaceMinPerKm,
+            calibratedMaxHrBpm = profile.fcMaxCalibradaBpm
         )
     }
 
@@ -1224,6 +1225,7 @@ fun ProfileScreen(
             athleteAge = profile.idade,
             runningHistory = runningSessions,
             baselinePaceMinPerKm = profile.baselinePaceMinPerKm,
+            calibratedMaxHrBpm = profile.fcMaxCalibradaBpm,
             onSaveProfile = { savedProfile, newBaselinePaceMin, recommendedProgramId ->
                 com.example.ui.components.RunnerAnamnesisManager.saveProfile(context, savedProfile)
                 viewModel.saveRunnerBaselinePace(newBaselinePaceMin)

@@ -1691,6 +1691,40 @@ fun calculateEffectiveMaxHr(
 }
 
 /**
+ * Calcula o limiar dinâmico (95% da FCmáx efetiva) para o alerta de voz de esforço cardiovascular elevado.
+ * Prioriza `calibratedMaxHrBpm` do perfil quando preenchida (100..235 bpm), faz fallback pela fórmula
+ * etária quando não calibrada e usa `fallbackThresholdBpm` (185 bpm) somente se não houver FCmáx nem idade válida.
+ */
+fun calculateHighHrVoiceAlertThresholdBpm(
+    calibratedMaxHrBpm: Int? = null,
+    ageYears: Int? = null,
+    fallbackThresholdBpm: Int = 185
+): Int {
+    val effectiveMaxHr = calculateEffectiveMaxHr(
+        ageYears = ageYears,
+        calibratedMaxHrBpm = calibratedMaxHrBpm
+    )
+    if (effectiveMaxHr <= 0) return fallbackThresholdBpm
+    return (effectiveMaxHr * 0.95f).roundToInt().coerceIn(110, 225)
+}
+
+/**
+ * Retorna true quando a FC ao vivo ultrapassa o limiar dinâmico (95% da FCmáx efetiva).
+ */
+fun shouldTriggerHighHrVoiceAlert(
+    liveBpm: Int,
+    calibratedMaxHrBpm: Int? = null,
+    ageYears: Int? = null
+): Boolean {
+    if (liveBpm <= 0) return false
+    val thresholdBpm = calculateHighHrVoiceAlertThresholdBpm(
+        calibratedMaxHrBpm = calibratedMaxHrBpm,
+        ageYears = ageYears
+    )
+    return liveBpm > thresholdBpm
+}
+
+/**
  * Calcula as faixas de BPM das 5 Zonas Cardíacas calibradas dinamicamente pela `effectiveMaxHr`:
  * - Z1 (Leve / Recuperação): < 62% da FCmáx
  * - Z2 (Intensa / Queima de Gordura): 62% a 71% da FCmáx

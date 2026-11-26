@@ -48,7 +48,7 @@ object LongScreenshotHelper {
 
     /**
      * Captures the complete current screen, auto-scrolls if scrollable,
-     * saves PNG to Pictures/MaxPerformance/Capturas/ with MP_YYYY-MM-DD_HH-mm-ss.png naming,
+     * saves PNG to Pictures/MAXPERFORMANCE/Capturas/ with MP_YYYY-MM-DD_HH-mm-ss.png naming,
      * and automatically launches the native Android Share Sheet.
      */
     fun captureAndShare(context: Context, activity: Activity) {

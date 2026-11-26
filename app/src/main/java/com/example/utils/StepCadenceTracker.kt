@@ -48,6 +48,9 @@ object StepCadenceTracker : SensorEventListener {
     @Volatile
     private var isListening = false
 
+    @Volatile
+    private var isPaused = false
+
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var decayJob: Job? = null
 
@@ -78,9 +81,21 @@ object StepCadenceTracker : SensorEventListener {
             hasStepSensor = false
         }
 
+        isPaused = false
         isListening = true
         startDecayLoop()
     }
+
+    fun setPaused(paused: Boolean) {
+        isPaused = paused
+        if (paused) {
+            stepTimestamps.clear()
+            lastStepTimestampMs = 0L
+            _currentCadenceSpm.value = 0
+        }
+    }
+
+    fun isCurrentlyPaused(): Boolean = isPaused
 
     fun stop() {
         if (!isListening) return
@@ -92,10 +107,12 @@ object StepCadenceTracker : SensorEventListener {
         decayJob?.cancel()
         decayJob = null
         isListening = false
+        isPaused = false
     }
 
     fun reset() {
         stop()
+        isPaused = false
         _totalSteps.value = 0
         _currentCadenceSpm.value = 0
         lastStepTimestampMs = 0L
@@ -108,27 +125,32 @@ object StepCadenceTracker : SensorEventListener {
      * se o listener não estiver ativo ou se nenhum passo tiver sido reportado (ex: sem permissão ACTIVITY_RECOGNITION).
      */
     fun isPhysicallyMoving(nowMs: Long = System.currentTimeMillis()): Boolean {
+        if (isPaused) return false
         if (!isListening || !hasStepSensor) return true
         if (lastStepTimestampMs == 0L) return true
         return (nowMs - lastStepTimestampMs) <= 4500L
     }
 
-    override fun onSensorChanged(event: SensorEvent?) {
-        if (event == null || event.sensor.type != Sensor.TYPE_STEP_DETECTOR) return
+    internal fun onStepDetectedAt(nowMs: Long = System.currentTimeMillis()) {
+        if (isPaused) return
 
-        val now = System.currentTimeMillis()
-        lastStepTimestampMs = now
+        lastStepTimestampMs = nowMs
         _totalSteps.value += 1
 
-        stepTimestamps.add(now)
+        stepTimestamps.add(nowMs)
 
         // Descarta timestamps com mais de 15 segundos
-        val cutoff = now - 15000L
+        val cutoff = nowMs - 15000L
         while (stepTimestamps.peek()?.let { it < cutoff } == true) {
             stepTimestamps.poll()
         }
 
-        recalculateCadence(now)
+        recalculateCadence(nowMs)
+    }
+
+    override fun onSensorChanged(event: SensorEvent?) {
+        if (isPaused || event == null || event.sensor.type != Sensor.TYPE_STEP_DETECTOR) return
+        onStepDetectedAt(System.currentTimeMillis())
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
@@ -160,6 +182,11 @@ object StepCadenceTracker : SensorEventListener {
 
                 while (stepTimestamps.peek()?.let { it < cutoff } == true) {
                     stepTimestamps.poll()
+                }
+
+                if (isPaused) {
+                    _currentCadenceSpm.value = 0
+                    continue
                 }
 
                 if (lastStepTimestampMs > 0L && (now - lastStepTimestampMs) > 4000L) {

@@ -257,7 +257,7 @@ object Route3dVideoExporter {
                 }
             }
 
-            // Salva cópia pública na Galeria (Movies/MAXPerformanceRun)
+            // Salva cópia pública na Galeria (Movies/MAXPERFORMANCE)
             val savedGalleryUri = saveVideoToGallery(context, outFile)
 
             withContext(Dispatchers.Main) {

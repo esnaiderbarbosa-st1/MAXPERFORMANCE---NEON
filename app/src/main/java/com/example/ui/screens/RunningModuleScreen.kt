@@ -185,7 +185,13 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
         val engine = preWorkoutTts
         if (engine != null) {
             runCatching {
-                engine.speak(message, TextToSpeech.QUEUE_FLUSH, null, "pre_workout_gps_${System.currentTimeMillis()}")
+                AudioSynth.requestAudioFocus(context)
+                val status = engine.speak(message, TextToSpeech.QUEUE_FLUSH, null, "pre_workout_gps_${System.currentTimeMillis()}")
+                if (status != TextToSpeech.SUCCESS) {
+                    AudioSynth.abandonAudioFocus(context)
+                }
+            }.onFailure {
+                AudioSynth.abandonAudioFocus(context)
             }
         } else {
             pendingPreWorkoutSpeech = message
@@ -193,13 +199,49 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
                 var ttsInstance: TextToSpeech? = null
                 ttsInstance = TextToSpeech(context.applicationContext) { status ->
                     if (status == TextToSpeech.SUCCESS) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                            runCatching {
+                                ttsInstance?.setAudioAttributes(
+                                    android.media.AudioAttributes.Builder()
+                                        .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                                        .build()
+                                )
+                            }
+                        }
+                        runCatching {
+                            ttsInstance?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                                override fun onStart(utteranceId: String?) {}
+                                override fun onDone(utteranceId: String?) {
+                                    AudioSynth.abandonAudioFocus(context)
+                                }
+                                @Deprecated("Deprecated in Java")
+                                override fun onError(utteranceId: String?) {
+                                    AudioSynth.abandonAudioFocus(context)
+                                }
+                                override fun onError(utteranceId: String?, errorCode: Int) {
+                                    AudioSynth.abandonAudioFocus(context)
+                                }
+                                override fun onStop(utteranceId: String?, interrupted: Boolean) {
+                                    if (!interrupted) {
+                                        AudioSynth.abandonAudioFocus(context)
+                                    }
+                                }
+                            })
+                        }
                         runCatching { ttsInstance?.language = Locale.forLanguageTag("pt-BR") }
                         preWorkoutTts = ttsInstance
                         pendingPreWorkoutSpeech?.let { msg ->
                             pendingPreWorkoutSpeech = null
                             if (com.example.MainActivity.isRunningSessionActive) {
                                 runCatching {
-                                    ttsInstance?.speak(msg, TextToSpeech.QUEUE_FLUSH, null, "pre_workout_gps_alert")
+                                    AudioSynth.requestAudioFocus(context)
+                                    val speakStatus = ttsInstance?.speak(msg, TextToSpeech.QUEUE_FLUSH, null, "pre_workout_gps_alert")
+                                    if (speakStatus != TextToSpeech.SUCCESS) {
+                                        AudioSynth.abandonAudioFocus(context)
+                                    }
+                                }.onFailure {
+                                    AudioSynth.abandonAudioFocus(context)
                                 }
                             }
                         }
@@ -214,12 +256,13 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
     val anamnesisProfile = remember(context, anamnesisVersion, userProfile.baselinePaceMinPerKm) {
         com.example.ui.components.RunnerAnamnesisManager.loadProfile(context, userProfile.baselinePaceMinPerKm)
     }
-    val runnerCalibration = remember(anamnesisProfile, userProfile.idade, runningHistory, userProfile.baselinePaceMinPerKm) {
+    val runnerCalibration = remember(anamnesisProfile, userProfile.idade, runningHistory, userProfile.baselinePaceMinPerKm, userProfile.fcMaxCalibradaBpm) {
         com.example.ui.components.RunnerAnamnesisManager.calculateCalibration(
             profile = anamnesisProfile,
             athleteAge = userProfile.idade,
             history = runningHistory,
-            baselinePaceMinPerKm = userProfile.baselinePaceMinPerKm
+            baselinePaceMinPerKm = userProfile.baselinePaceMinPerKm,
+            calibratedMaxHrBpm = userProfile.fcMaxCalibradaBpm
         )
     }
     var showAnamnesisModal by rememberSaveable { mutableStateOf(false) }
@@ -234,6 +277,7 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
     var showPaceOnboardingSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(anamnesisProfile.isConfigured, needsPaceOnboarding) {
+        if (viewModel.isRunningHudActive.value) return@LaunchedEffect
         if (!anamnesisProfile.isConfigured && !com.example.ui.components.RunnerAnamnesisManager.hasAutoShownOnce(context)) {
             com.example.ui.components.RunnerAnamnesisManager.markAutoShownOnce(context)
             hasDismissedPaceOnboarding = true
@@ -290,6 +334,7 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
     // Active session state — Padrão obrigatório: Ar Livre (isIndoor = false / OUTDOOR) e GPS Habilitado (isGpsEnabled = true)
     var isHUDActive by rememberSaveable { mutableStateOf(false) }
     var activePlan by rememberSaveable { mutableStateOf<RunningWorkoutPlan?>(null) }
+    var selectedFreeRaceMode by rememberSaveable { mutableStateOf<com.example.engine.FreeRunRaceMode?>(null) }
     var isGentleModeSession by rememberSaveable { mutableStateOf(false) }
     var isIndoor by rememberSaveable { mutableStateOf(false) }
     var isGpsEnabled by rememberSaveable { mutableStateOf(true) }
@@ -452,11 +497,43 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
         }
     }
 
-    fun triggerWorkoutStartWithAutoGps(env: String = selectedEnvironment, gentle: Boolean = isGentleModeSession) {
+    fun triggerWorkoutStartWithAutoGps(
+        env: String = selectedEnvironment,
+        gentle: Boolean = isGentleModeSession,
+        freeRaceMode: com.example.engine.FreeRunRaceMode? = selectedFreeRaceMode,
+        sessionType: String? = activePlan?.sessionType,
+        plan: RunningWorkoutPlan? = activePlan,
+        programId: String? = viewModel.selectedRunningProgramId.value
+    ) {
         pendingStartEnv = env
         pendingStartGentle = gentle
         showEnvironmentSheet = false
-        showPreRunCheckInDialog = true
+        val effectiveSessionType = sessionType ?: plan?.sessionType
+        val effectiveDisplayTitle = plan?.let { planRef ->
+            RunningProgramManager.getDisplayTitleForSessionType(
+                sessionType = effectiveSessionType,
+                isGentleMode = gentle,
+                weekNumber = planRef.weekNumber,
+                dayNumber = selectedDayNumberForSession
+            )
+        }
+        if (!RunningProgramManager.shouldShowPreRunAnamnesis(
+                freeRaceMode = freeRaceMode,
+                sessionType = effectiveSessionType,
+                planTitle = plan?.title,
+                displayTitle = effectiveDisplayTitle,
+                weekNumber = plan?.weekNumber,
+                programId = programId
+            )
+        ) {
+            showPreRunCheckInDialog = false
+            showAnamnesisModal = false
+            showPaceOnboardingSheet = false
+            viewModel.setActivePreRunCheckIn(null)
+            executeWorkoutStartWithAutoGps(env = env, gentle = gentle)
+        } else {
+            showPreRunCheckInDialog = true
+        }
     }
 
     // Quando o usuário volta das Configurações de Localização do Android após ativar o GPS, inicia automaticamente
@@ -720,8 +797,7 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
                 RunningProgramManager.getProgramById(selectedProgramId)
             }
 
-            // selectedWeek e selectedDay já estão elevados e sincronizados com manualPlanDayOverride
-            var selectedFreeRaceMode by rememberSaveable { mutableStateOf<com.example.engine.FreeRunRaceMode?>(null) }
+            // selectedWeek, selectedDay e selectedFreeRaceMode já estão elevados no escopo principal
             var includeWarmupWithStrides by rememberSaveable { mutableStateOf(false) }
             var isTrack400mSelected by rememberSaveable(selectedProgramId) {
                 mutableStateOf(selectedProgramId == "fartlek_intervals" || selectedProgramId == "tiros_10x400m")
@@ -1012,16 +1088,23 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
                                 showWorkoutStepByStepExplainer = false
                                 val chosenFreeRace = selectedFreeRaceMode
                                 if (chosenFreeRace != null) {
-                                    activePlan = RunningProgramManager.getFreeOrRacePlan(chosenFreeRace)
+                                    val freePlan = RunningProgramManager.getFreeOrRacePlan(chosenFreeRace)
+                                    activePlan = freePlan
                                     selectedDayNumberForSession = 1
                                     isIndoor = false
                                     isGpsEnabled = true
                                     isGentleModeSession = false
                                     selectedEnvironment = "OUTDOOR"
+                                    showPreRunCheckInDialog = false
+                                    viewModel.setActivePreRunCheckIn(null)
                                     AudioSynth.playTickSound()
                                     triggerWorkoutStartWithAutoGps(
                                         env = "OUTDOOR",
-                                        gentle = false
+                                        gentle = false,
+                                        freeRaceMode = chosenFreeRace,
+                                        sessionType = freePlan.sessionType,
+                                        plan = freePlan,
+                                        programId = selectedProgramId
                                     )
                                 } else {
                                     activePlan = activeSelectedPlan
@@ -1030,7 +1113,11 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
                                     val targetEnv = if (isIndoor) "TREADMILL" else "OUTDOOR"
                                     triggerWorkoutStartWithAutoGps(
                                         env = targetEnv,
-                                        gentle = isGentleModeSession
+                                        gentle = isGentleModeSession,
+                                        freeRaceMode = null,
+                                        sessionType = activeSelectedPlan.sessionType,
+                                        plan = activeSelectedPlan,
+                                        programId = selectedProgramId
                                     )
                                 }
                             },
@@ -1785,6 +1872,10 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
                                                                     isGpsEnabled = true
                                                                     isGentleModeSession = false
                                                                     selectedEnvironment = "OUTDOOR"
+                                                                    activePlan = RunningProgramManager.getFreeOrRacePlan(com.example.engine.FreeRunRaceMode.FREE_RUN)
+                                                                    showPreRunCheckInDialog = false
+                                                                    viewModel.setActivePreRunCheckIn(null)
+                                                                    showRunConfigDialog = false
                                                                     AudioSynth.playTickSound()
                                                                 },
                                                                 color = if (isFreeSelected) Color(0xFF00E676).copy(alpha = 0.20f) else Color(0xFF151922),
@@ -1820,6 +1911,10 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
                                                                     isGpsEnabled = true
                                                                     isGentleModeSession = false
                                                                     selectedEnvironment = "OUTDOOR"
+                                                                    activePlan = RunningProgramManager.getFreeOrRacePlan(com.example.engine.FreeRunRaceMode.RACE_5K)
+                                                                    showPreRunCheckInDialog = false
+                                                                    viewModel.setActivePreRunCheckIn(null)
+                                                                    showRunConfigDialog = false
                                                                     AudioSynth.playTickSound()
                                                                 },
                                                                 color = if (is5kSelected) Color(0xFF00B0FF).copy(alpha = 0.24f) else Color(0xFF151922),
@@ -1855,6 +1950,10 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
                                                                     isGpsEnabled = true
                                                                     isGentleModeSession = false
                                                                     selectedEnvironment = "OUTDOOR"
+                                                                    activePlan = RunningProgramManager.getFreeOrRacePlan(com.example.engine.FreeRunRaceMode.RACE_10K)
+                                                                    showPreRunCheckInDialog = false
+                                                                    viewModel.setActivePreRunCheckIn(null)
+                                                                    showRunConfigDialog = false
                                                                     AudioSynth.playTickSound()
                                                                 },
                                                                 color = if (is10kSelected) Color(0xFF00B0FF).copy(alpha = 0.24f) else Color(0xFF151922),
@@ -2295,16 +2394,23 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
                                             .clickable {
                                                 val chosenFreeRace = selectedFreeRaceMode
                                                 if (chosenFreeRace != null) {
-                                                    activePlan = RunningProgramManager.getFreeOrRacePlan(chosenFreeRace)
+                                                    val freePlan = RunningProgramManager.getFreeOrRacePlan(chosenFreeRace)
+                                                    activePlan = freePlan
                                                     selectedDayNumberForSession = 1
                                                     isIndoor = false
                                                     isGpsEnabled = true
                                                     isGentleModeSession = false
                                                     selectedEnvironment = "OUTDOOR"
+                                                    showPreRunCheckInDialog = false
+                                                    viewModel.setActivePreRunCheckIn(null)
                                                     AudioSynth.playTickSound()
                                                     triggerWorkoutStartWithAutoGps(
                                                         env = "OUTDOOR",
-                                                        gentle = false
+                                                        gentle = false,
+                                                        freeRaceMode = chosenFreeRace,
+                                                        sessionType = freePlan.sessionType,
+                                                        plan = freePlan,
+                                                        programId = selectedProgramId
                                                     )
                                                 } else {
                                                     activePlan = activeSelectedPlan
@@ -2313,7 +2419,11 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
                                                     val targetEnv = if (isIndoor) "TREADMILL" else "OUTDOOR"
                                                     triggerWorkoutStartWithAutoGps(
                                                         env = targetEnv,
-                                                        gentle = isGentleModeSession
+                                                        gentle = isGentleModeSession,
+                                                        freeRaceMode = null,
+                                                        sessionType = activeSelectedPlan.sessionType,
+                                                        plan = activeSelectedPlan,
+                                                        programId = selectedProgramId
                                                     )
                                                 }
                                             }
@@ -2678,7 +2788,14 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
     if (showEnvironmentSheet && activePlan != null) {
         RunningEnvironmentBottomSheet(
             onConfirm = { env, gentle ->
-                triggerWorkoutStartWithAutoGps(env = env, gentle = gentle)
+                triggerWorkoutStartWithAutoGps(
+                    env = env,
+                    gentle = gentle,
+                    freeRaceMode = selectedFreeRaceMode,
+                    sessionType = activePlan?.sessionType,
+                    plan = activePlan,
+                    programId = viewModel.selectedRunningProgramId.value
+                )
             },
             onDismiss = { showEnvironmentSheet = false }
         )
@@ -2832,6 +2949,7 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
             athleteAge = userProfile.idade,
             runningHistory = runningHistory,
             baselinePaceMinPerKm = userProfile.baselinePaceMinPerKm,
+            calibratedMaxHrBpm = userProfile.fcMaxCalibradaBpm,
             onSaveProfile = { savedProfile, newBaselinePaceMin, recommendedProgramId ->
                 com.example.ui.components.RunnerAnamnesisManager.saveProfile(context, savedProfile)
                 viewModel.saveRunnerBaselinePace(newBaselinePaceMin)
@@ -2860,6 +2978,7 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
             calibration = runnerCalibration,
             selectedRxCode = selectedRxWorkoutCode,
             onSelectRxWorkout = { rxWorkout ->
+                selectedFreeRaceMode = null
                 selectedRxWorkoutCode = rxWorkout.code
                 showRxWorkoutLibraryModal = false
                 Toast.makeText(
@@ -3234,6 +3353,12 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
                             val isSelected = prog.id == currentCatalogProgramId
                             Surface(
                                 onClick = {
+                                    if (prog.id == "free_regenerative") {
+                                        showPreRunCheckInDialog = false
+                                        viewModel.setActivePreRunCheckIn(null)
+                                    } else {
+                                        selectedFreeRaceMode = null
+                                    }
                                     viewModel.selectRunningProgram(prog.id)
                                     viewModel.showRunningProgramsCatalog.value = false
                                     AudioSynth.playTickSound()
@@ -3427,10 +3552,10 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
         )
     }
 
-    // Modal Rápido Pré-Corrida: "Prontidão Expressa"
+    // Modal Rápido Pré-Corrida: "Prontidão Expressa" (apenas treinos estruturados; bloqueado em Corrida Livre/Prova)
     if (showPreRunCheckInDialog) {
-        val preRunTitle = remember(activePlan, selectedDayNumberForSession, isGentleModeSession) {
-            val planRef = activePlan
+        val planRef = activePlan
+        val preRunTitle = remember(planRef, selectedDayNumberForSession, isGentleModeSession) {
             if (planRef != null) {
                 RunningProgramManager.getDisplayTitleForSessionType(
                     sessionType = planRef.sessionType,
@@ -3442,22 +3567,36 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
                 "Sessão de Corrida"
             }
         }
-        PreRunExpressReadinessDialog(
-            workoutTitle = preRunTitle,
-            onSkipAndStart = { skippedCheckIn ->
-                viewModel.setActivePreRunCheckIn(skippedCheckIn)
-                showPreRunCheckInDialog = false
-                executeWorkoutStartWithAutoGps(env = pendingStartEnv, gentle = pendingStartGentle)
-            },
-            onConfirmAndStart = { completedCheckIn ->
-                viewModel.setActivePreRunCheckIn(completedCheckIn)
-                showPreRunCheckInDialog = false
-                executeWorkoutStartWithAutoGps(env = pendingStartEnv, gentle = pendingStartGentle)
-            },
-            onDismiss = {
+        val canShowPreRunDialog = RunningProgramManager.shouldShowPreRunAnamnesis(
+            freeRaceMode = selectedFreeRaceMode,
+            sessionType = planRef?.sessionType,
+            planTitle = planRef?.title,
+            displayTitle = preRunTitle,
+            weekNumber = planRef?.weekNumber,
+            programId = currentCatalogProgramId
+        )
+        if (canShowPreRunDialog) {
+            PreRunExpressReadinessDialog(
+                workoutTitle = preRunTitle,
+                onSkipAndStart = { skippedCheckIn ->
+                    viewModel.setActivePreRunCheckIn(skippedCheckIn)
+                    showPreRunCheckInDialog = false
+                    executeWorkoutStartWithAutoGps(env = pendingStartEnv, gentle = pendingStartGentle)
+                },
+                onConfirmAndStart = { completedCheckIn ->
+                    viewModel.setActivePreRunCheckIn(completedCheckIn)
+                    showPreRunCheckInDialog = false
+                    executeWorkoutStartWithAutoGps(env = pendingStartEnv, gentle = pendingStartGentle)
+                },
+                onDismiss = {
+                    showPreRunCheckInDialog = false
+                }
+            )
+        } else {
+            LaunchedEffect(Unit) {
                 showPreRunCheckInDialog = false
             }
-        )
+        }
     }
 
     // Modal de Resumo Pós-Corrida
@@ -3602,6 +3741,11 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
                 RunTracker.persistSessionDirectlyToDb(context, session)
                 RunTracker.clearActiveWorkoutCheckpoint(context)
                 runCatching {
+                    com.example.ui.components.RunRoutePhotoManager.migratePhotosBetweenSessionsIfNeeded(
+                        context = context,
+                        fromSessionId = "auto_checkpoint_session",
+                        toSessionId = session.id
+                    )
                     com.example.ui.components.RunRoutePhotoManager.recalibratePhotoProgressForFinalDistance(
                         context = context,
                         sessionId = session.id,
@@ -3712,6 +3856,11 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
                 RunTracker.persistSessionDirectlyToDb(context, session)
                 RunTracker.clearActiveWorkoutCheckpoint(context)
                 runCatching {
+                    com.example.ui.components.RunRoutePhotoManager.migratePhotosBetweenSessionsIfNeeded(
+                        context = context,
+                        fromSessionId = "auto_checkpoint_session",
+                        toSessionId = session.id
+                    )
                     com.example.ui.components.RunRoutePhotoManager.recalibratePhotoProgressForFinalDistance(
                         context = context,
                         sessionId = session.id,
@@ -4815,7 +4964,14 @@ fun RunningHUD(
     }
 
     // Câmera ao Vivo durante a Corrida (Estilo Relive): captura foto sem pausar o treino e anexa ao ponto GPS e Km atuais
-    var pendingCameraCaptureFile by remember { mutableStateOf<java.io.File?>(null) }
+    // Persiste o caminho da captura via rememberSaveable + SharedPreferences para sobreviver a recomposições e recriação ao retornar da câmera
+    var pendingCameraCapturePath by rememberSaveable(sessionIdForCheckpoint) {
+        mutableStateOf(
+            runCatching {
+                com.example.ui.components.RunRoutePhotoManager.loadPendingLiveCameraCapturePath(context, sessionIdForCheckpoint)
+            }.getOrNull()
+        )
+    }
     var livePhotoCount by remember(sessionIdForCheckpoint) {
         mutableIntStateOf(
             runCatching {
@@ -4826,8 +4982,10 @@ fun RunningHUD(
     val liveRunCameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { captured ->
-        val file = pendingCameraCaptureFile
-        if (captured && file != null && file.exists()) {
+        val resolvedPath = pendingCameraCapturePath
+            ?: com.example.ui.components.RunRoutePhotoManager.loadPendingLiveCameraCapturePath(context, sessionIdForCheckpoint)
+        val file = resolvedPath?.let { java.io.File(it) }
+        if (captured && file != null && file.exists() && file.length() > 0L) {
             val lastGps = RunTracker.recordedPoints.lastOrNull()
             val estTotalDistM = maxOf(
                 (activeWorkoutDurationSec.coerceAtLeast(900) / 60) * 145,
@@ -4845,12 +5003,20 @@ fun RunningHUD(
                 currentPaceSecPerKm = runTrackState.currentPaceSecPerKm
             )
             livePhotoCount = updatedPins.size
+            pendingCameraCapturePath = null
+            com.example.ui.components.RunRoutePhotoManager.clearPendingLiveCameraCapturePath(context, sessionIdForCheckpoint)
             val kmNow = String.format(Locale("pt", "BR"), "%.2f", runTrackState.distanceMeters / 1000f)
             Toast.makeText(
                 context,
                 "Foto salva no Km $kmNow do percurso! Ela aparecerá no voo Cine 3D.",
                 Toast.LENGTH_SHORT
             ).show()
+        } else {
+            if (!captured && file != null && file.exists() && file.length() == 0L) {
+                runCatching { file.delete() }
+            }
+            pendingCameraCapturePath = null
+            com.example.ui.components.RunRoutePhotoManager.clearPendingLiveCameraCapturePath(context, sessionIdForCheckpoint)
         }
     }
 
@@ -5125,20 +5291,26 @@ fun RunningHUD(
                 if (isHighPriority) {
                     lastCriticalSpeechRealtimeMs = SystemClock.elapsedRealtime()
                     AudioSynth.requestAudioFocus(context)
-                    engine.speak(
+                    val speakStatus = engine.speak(
                         message,
                         TextToSpeech.QUEUE_FLUSH,
                         null,
                         "running_coach_crit_${System.currentTimeMillis()}"
                     )
+                    if (speakStatus != TextToSpeech.SUCCESS) {
+                        AudioSynth.abandonAudioFocus(context)
+                    }
                 } else {
                     AudioSynth.requestAudioFocus(context)
-                    engine.speak(
+                    val speakStatus = engine.speak(
                         message,
                         TextToSpeech.QUEUE_ADD,
                         null,
                         "running_coach_sec_${System.currentTimeMillis()}"
                     )
+                    if (speakStatus != TextToSpeech.SUCCESS) {
+                        AudioSynth.abandonAudioFocus(context)
+                    }
                 }
             } catch (_: Exception) {
                 AudioSynth.abandonAudioFocus(context)
@@ -5175,7 +5347,9 @@ fun RunningHUD(
                                     AudioSynth.abandonAudioFocus(context)
                                 }
                                 override fun onStop(utteranceId: String?, interrupted: Boolean) {
-                                    AudioSynth.abandonAudioFocus(context)
+                                    if (!interrupted) {
+                                        AudioSynth.abandonAudioFocus(context)
+                                    }
                                 }
                             })
                             val ptBr = Locale.forLanguageTag("pt-BR")
@@ -5188,12 +5362,15 @@ fun RunningHUD(
                                 try {
                                     lastCriticalSpeechRealtimeMs = SystemClock.elapsedRealtime()
                                     AudioSynth.requestAudioFocus(context)
-                                    tts?.speak(
+                                    val speakStatus = tts?.speak(
                                         message,
                                         if (isHighPriority) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,
                                         null,
                                         "running_coach_init_${System.currentTimeMillis()}"
                                     )
+                                    if (speakStatus != TextToSpeech.SUCCESS) {
+                                        AudioSynth.abandonAudioFocus(context)
+                                    }
                                 } catch (_: Exception) {
                                     AudioSynth.abandonAudioFocus(context)
                                 }
@@ -5665,6 +5842,10 @@ fun RunningHUD(
 
                     val currentPace = runTrackState.currentPaceSecPerKm
                     val liveBpm = bleManager.currentBpm.value
+                    val highHrVoiceAlertThresholdBpm = com.example.data.model.calculateHighHrVoiceAlertThresholdBpm(
+                        calibratedMaxHrBpm = calibratedMaxHrBpm,
+                        ageYears = athleteAge
+                    )
                     val toleranceMs = RunTracker.PACE_OUT_OF_ZONE_TOLERANCE_SECONDS * 1000L
                     val isEasyOrZ2Session = plan.sessionType.uppercase() in listOf("Z2", "EASY", "RECOVERY", "REGENERATIVE")
 
@@ -5674,9 +5855,9 @@ fun RunningHUD(
                         activeBlock?.type == RunningBlockType.RUN &&
                         !isEasyOrZ2Session
                     ) {
-                        // A) Guarda de Segurança Cardiovascular na 1ª metade do treino: FC > 185 bpm (> 96% FCmáx) por > 45s contínuos
+                        // A) Guarda de Segurança Cardiovascular na 1ª metade do treino: FC > 95% da FCmáx efetiva (calibrada ou por idade) por > 45s contínuos
                         val isFirstHalfOfWorkout = activeWorkoutDurationSec > 0 && elapsedSec < (activeWorkoutDurationSec / 2)
-                        if (isFirstHalfOfWorkout && liveBpm > 185) {
+                        if (isFirstHalfOfWorkout && liveBpm > highHrVoiceAlertThresholdBpm) {
                             if (highHrInFirstHalfSinceRealtimeMs == 0L) {
                                 highHrInFirstHalfSinceRealtimeMs = now
                             }
@@ -5716,7 +5897,7 @@ fun RunningHUD(
                                     triggerSlowPaceFeedback()
                                     speakCoach("Acelere um pouco", isHighPriority = false)
                                 }
-                            } else if (isStrongOnTarget && (liveBpm <= 0 || liveBpm <= 185)) {
+                            } else if (isStrongOnTarget && (liveBpm <= 0 || liveBpm <= highHrVoiceAlertThresholdBpm)) {
                                 if (paceOutOfZoneSinceRealtimeMs == 0L) {
                                     paceOutOfZoneSinceRealtimeMs = now
                                 }
@@ -5859,7 +6040,12 @@ fun RunningHUD(
                 dir,
                 "live_cam_${sessionIdForCheckpoint}_${System.currentTimeMillis()}.jpg"
             )
-            pendingCameraCaptureFile = photoFile
+            pendingCameraCapturePath = photoFile.absolutePath
+            com.example.ui.components.RunRoutePhotoManager.savePendingLiveCameraCapturePath(
+                context = context,
+                sessionId = sessionIdForCheckpoint,
+                filePath = photoFile.absolutePath
+            )
             val photoUri = androidx.core.content.FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
@@ -5867,6 +6053,8 @@ fun RunningHUD(
             )
             liveRunCameraLauncher.launch(photoUri)
         }.onFailure {
+            pendingCameraCapturePath = null
+            com.example.ui.components.RunRoutePhotoManager.clearPendingLiveCameraCapturePath(context, sessionIdForCheckpoint)
             Toast.makeText(
                 context,
                 "Não foi possível abrir a câmera agora.",
