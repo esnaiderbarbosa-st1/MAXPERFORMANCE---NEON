@@ -582,7 +582,7 @@ fun RunningSessionDetailScreen(viewModel: MainViewModel) {
                     }
 
                     // Botão de Classificação Rápida: "Marcar como Prova" / "Editar Prova"
-                    val isClassifiedRace = currentSession.isClassifiedAsRace()
+                    val isClassifiedRace = currentSession.isClassifiedAsRace(isLinkedOfficialRace = linkedOfficialRace != null)
                     val raceAmber = Color(0xFFF59E0B)
                     val raceAmberText = if (isLightReport) Color(0xFFB45309) else Color(0xFFFBBF24)
                     Surface(
@@ -1776,8 +1776,13 @@ fun RunningSessionDetailScreen(viewModel: MainViewModel) {
     }
 
     if (showClassifySessionDialog) {
+        val linkedOfficial = remember(officialRaces, currentSession.id) {
+            officialRaces.firstOrNull { it.linkedRunSessionId == currentSession.id }
+        }
         com.example.ui.components.RunSessionClassificationDialog(
             session = currentSession,
+            isLinkedOfficialRace = linkedOfficial != null,
+            linkedOfficialRaceName = linkedOfficial?.raceName,
             onDismiss = { showClassifySessionDialog = false },
             onConfirm = { isRace, raceName ->
                 viewModel.updateRunningSessionClassification(

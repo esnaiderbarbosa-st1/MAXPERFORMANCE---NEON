@@ -1070,12 +1070,25 @@ object RunningProgramManager {
         return false
     }
 
-    fun getDisplayTitleForSession(session: RunningSession): String {
-        val customName = session.customRaceName()
+    fun getDisplayTitleForSession(
+        session: RunningSession,
+        isLinkedOfficialRace: Boolean = false,
+        linkedOfficialRaceName: String? = null
+    ): String {
+        val isRace = session.isClassifiedAsRace(isLinkedOfficialRace)
+        val customName = session.customRaceName(isLinkedOfficialRace)
+            ?: if (isRace) linkedOfficialRaceName?.trim()?.takeIf { it.isNotBlank() } else null
         if (customName != null) return customName
         val st = session.sessionType
         val isExplicitTraining = session.advancedMetrics?.isRaceOverride == false
         return when {
+            isRace && (
+                isEffectiveFreeRun(session) ||
+                    st.equals("FREE_RUN", ignoreCase = true) ||
+                    st.equals("FREE_REGENERATIVE", ignoreCase = true) ||
+                    session.isGentleMode ||
+                    st.equals("GENTLE_WALK", ignoreCase = true)
+                ) -> "Prova"
             session.isGentleMode || st.equals("GENTLE_WALK", ignoreCase = true) -> "Caminhada / Trote Leve"
             st.startsWith("RX_", ignoreCase = true) -> "Treino ${st.removePrefix("RX_")}"
             st.equals("RUN_TO_MAINTAIN", ignoreCase = true) -> "Run to Maintain • D${session.dayNumber}"
@@ -1095,8 +1108,11 @@ object RunningProgramManager {
         }
     }
 
-    fun getBadgeLabelForSession(session: RunningSession): String {
-        if (session.isClassifiedAsRace()) return "PROVA"
+    fun getBadgeLabelForSession(
+        session: RunningSession,
+        isLinkedOfficialRace: Boolean = false
+    ): String {
+        if (session.isClassifiedAsRace(isLinkedOfficialRace)) return "PROVA"
         val st = session.sessionType
         return when {
             session.isGentleMode || st.equals("GENTLE_WALK", ignoreCase = true) -> "LEVE"

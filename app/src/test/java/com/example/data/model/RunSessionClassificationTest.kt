@@ -39,20 +39,74 @@ class RunSessionClassificationTest {
         // Preserva sessionType original para reversibilidade lossless
         assertEquals("FREE_RUN", asNamedRace.sessionType)
 
-        // Marca como Prova sem nome -> mantém título original com badge PROVA
+        // Marca como Prova sem nome -> substitui título genérico "Corrida Livre" por "Prova" com badge PROVA
         val asUnnamedRace = freeRun.withRaceClassification(isRace = true, raceName = "   ")
         assertTrue(asUnnamedRace.isClassifiedAsRace())
         assertNull(asUnnamedRace.customRaceName())
-        assertEquals("Corrida Livre", RunningProgramManager.getDisplayTitleForSession(asUnnamedRace))
+        assertEquals("Prova", RunningProgramManager.getDisplayTitleForSession(asUnnamedRace))
         assertEquals("PROVA", RunningProgramManager.getBadgeLabelForSession(asUnnamedRace))
 
-        // Desmarca voltando para Treino -> limpa raceName e restaura badge/título
+        // Desmarca voltando para Treino -> limpa raceName e restaura badge/título originais ("Corrida Livre")
         val revertedTraining = asNamedRace.withRaceClassification(isRace = false, raceName = "Circuito 5K")
         assertFalse(revertedTraining.isClassifiedAsRace())
         assertNull(revertedTraining.customRaceName())
         assertNull(revertedTraining.advancedMetrics?.raceName)
         assertEquals("Corrida Livre", RunningProgramManager.getDisplayTitleForSession(revertedTraining))
         assertEquals("LIVRE", RunningProgramManager.getBadgeLabelForSession(revertedTraining))
+    }
+
+    @Test
+    fun legacyLinkedOfficialRaceUnifiesWithAmberProvaBadgeAndCanBeUnmarked() {
+        val legacyLinkedFreeRun = RunningSession(
+            id = "run_legacy_official_533",
+            date = 1_765_050_000_000L,
+            weekNumber = 0,
+            dayNumber = 0,
+            sessionType = "FREE_RUN",
+            durationSec = 2400,
+            distanceMeters = 5330,
+            avgPaceSecPerKm = 450,
+            environment = "OUTDOOR"
+        )
+
+        // Sem override manual, vínculo legado em officialRaces já classifica como PROVA unificada
+        assertTrue(legacyLinkedFreeRun.isClassifiedAsRace(isLinkedOfficialRace = true))
+        assertEquals(
+            "PROVA",
+            RunningProgramManager.getBadgeLabelForSession(legacyLinkedFreeRun, isLinkedOfficialRace = true)
+        )
+        assertEquals(
+            "Prova",
+            RunningProgramManager.getDisplayTitleForSession(
+                session = legacyLinkedFreeRun,
+                isLinkedOfficialRace = true,
+                linkedOfficialRaceName = null
+            )
+        )
+        assertEquals(
+            "Corrida da Cidade 5K",
+            RunningProgramManager.getDisplayTitleForSession(
+                session = legacyLinkedFreeRun,
+                isLinkedOfficialRace = true,
+                linkedOfficialRaceName = "Corrida da Cidade 5K"
+            )
+        )
+
+        // Se o atleta desmarcar explicitamente para Treino, isRaceOverride = false prevalece
+        val explicitlyUnmarked = legacyLinkedFreeRun.withRaceClassification(isRace = false, raceName = null)
+        assertFalse(explicitlyUnmarked.isClassifiedAsRace(isLinkedOfficialRace = true))
+        assertEquals(
+            "LIVRE",
+            RunningProgramManager.getBadgeLabelForSession(explicitlyUnmarked, isLinkedOfficialRace = true)
+        )
+        assertEquals(
+            "Corrida Livre",
+            RunningProgramManager.getDisplayTitleForSession(
+                session = explicitlyUnmarked,
+                isLinkedOfficialRace = true,
+                linkedOfficialRaceName = "Corrida da Cidade 5K"
+            )
+        )
     }
 
     @Test

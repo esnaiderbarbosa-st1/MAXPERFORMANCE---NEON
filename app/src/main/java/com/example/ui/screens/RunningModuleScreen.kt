@@ -2733,15 +2733,27 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
                                             verticalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
                                             runningHistory.take(5).forEach { session ->
+                                                val linkedOfficialRace = remember(officialRaces, session.id) {
+                                                    officialRaces.firstOrNull { it.linkedRunSessionId == session.id }
+                                                }
+                                                val isLinkedOfficial = linkedOfficialRace != null
                                                 val dateFormatted = remember(session.date) {
                                                     SimpleDateFormat("dd.MM.yy", Locale.getDefault()).format(Date(session.date))
                                                 }
-                                                val titleLine = remember(session) {
-                                                    RunningProgramManager.getDisplayTitleForSession(session)
+                                                val titleLine = remember(session, isLinkedOfficial, linkedOfficialRace?.raceName) {
+                                                    RunningProgramManager.getDisplayTitleForSession(
+                                                        session = session,
+                                                        isLinkedOfficialRace = isLinkedOfficial,
+                                                        linkedOfficialRaceName = linkedOfficialRace?.raceName
+                                                    )
                                                 }
-                                                val badgeLabel = remember(session) {
-                                                    RunningProgramManager.getBadgeLabelForSession(session)
+                                                val badgeLabel = remember(session, isLinkedOfficial) {
+                                                    RunningProgramManager.getBadgeLabelForSession(
+                                                        session = session,
+                                                        isLinkedOfficialRace = isLinkedOfficial
+                                                    )
                                                 }
+                                                val isRaceCard = badgeLabel == "PROVA"
                                                 val badgeAccentColor = when (badgeLabel) {
                                                     "PROVA" -> Color(0xFFF59E0B)
                                                     "LIVRE" -> Color(0xFF00E5FF)
@@ -2771,7 +2783,10 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
                                                 Surface(
                                                     color = RunColors.surface,
                                                     shape = RoundedCornerShape(12.dp),
-                                                    border = BorderStroke(1.dp, RunColors.border),
+                                                    border = BorderStroke(
+                                                        width = if (isRaceCard) 1.2.dp else 1.dp,
+                                                        color = if (isRaceCard) Color(0xFFF59E0B).copy(alpha = 0.50f) else RunColors.border
+                                                    ),
                                                     modifier = Modifier
                                                         .fillMaxWidth()
                                                         .clickable {
@@ -2784,85 +2799,80 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
                                                     Row(
                                                         modifier = Modifier
                                                             .fillMaxWidth()
-                                                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                            .padding(start = 12.dp, end = 8.dp, top = 11.dp, bottom = 11.dp),
+                                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                                                         verticalAlignment = Alignment.CenterVertically
                                                     ) {
-                                                        Row(
-                                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                                            verticalAlignment = Alignment.CenterVertically,
-                                                            modifier = Modifier.weight(1f)
+                                                        // Badge esquerdo com largura fixa padronizada (PROVA / LIVRE / PISTA / 5K / 10K)
+                                                        Box(
+                                                            contentAlignment = Alignment.Center,
+                                                            modifier = Modifier
+                                                                .width(66.dp)
+                                                                .clip(RoundedCornerShape(7.dp))
+                                                                .background(
+                                                                    badgeAccentColor.copy(alpha = if (isRaceCard) 0.20f else 0.15f)
+                                                                )
+                                                                .border(
+                                                                    width = if (isRaceCard) 1.2.dp else 1.dp,
+                                                                    color = if (isRaceCard) Color(0xFFF59E0B) else badgeAccentColor.copy(alpha = 0.45f),
+                                                                    shape = RoundedCornerShape(7.dp)
+                                                                )
+                                                                .padding(horizontal = 4.dp, vertical = 5.dp)
                                                         ) {
-                                                            // Badge Inteligente (LIVRE / PISTA / LEVE / 5K / 10K)
-                                                            Box(
-                                                                modifier = Modifier
-                                                                    .clip(RoundedCornerShape(6.dp))
-                                                                    .background(badgeAccentColor.copy(alpha = 0.15f))
-                                                                    .border(1.dp, badgeAccentColor.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
-                                                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                                            Text(
+                                                                text = badgeLabel,
+                                                                color = if (isRaceCard) Color(0xFFFBBF24) else badgeAccentColor,
+                                                                fontSize = 10.5.sp,
+                                                                fontWeight = if (isRaceCard) FontWeight.Black else FontWeight.Bold,
+                                                                maxLines = 1,
+                                                                softWrap = false,
+                                                                textAlign = TextAlign.Center
+                                                            )
+                                                        }
+
+                                                        Column(
+                                                            modifier = Modifier.weight(1f),
+                                                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                                                        ) {
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                                verticalAlignment = Alignment.CenterVertically
                                                             ) {
                                                                 Text(
-                                                                    text = badgeLabel,
-                                                                    color = badgeAccentColor,
-                                                                    fontSize = 11.sp,
+                                                                    text = titleLine,
+                                                                    color = Color.White,
+                                                                    fontSize = 13.5.sp,
                                                                     fontWeight = FontWeight.Bold,
+                                                                    maxLines = 1,
+                                                                    overflow = TextOverflow.Ellipsis,
+                                                                    modifier = Modifier
+                                                                        .weight(1f)
+                                                                        .padding(end = 6.dp)
+                                                                )
+                                                                Text(
+                                                                    text = dateFormatted,
+                                                                    color = RunColors.textSecondary,
+                                                                    fontSize = 10.5.sp,
+                                                                    fontWeight = FontWeight.Medium,
                                                                     maxLines = 1,
                                                                     softWrap = false
                                                                 )
                                                             }
-
-                                                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                                                Text(
-                                                                    text = titleLine,
-                                                                    color = Color.White,
-                                                                    fontSize = 14.sp,
-                                                                    fontWeight = FontWeight.Bold,
-                                                                    maxLines = 1,
-                                                                    overflow = TextOverflow.Ellipsis
-                                                                )
-                                                                Text(
-                                                                    text = "$kmText · $durText · $paceText · $dateFormatted",
-                                                                    color = RunColors.textSecondary,
-                                                                    fontSize = 12.sp,
-                                                                    maxLines = 1,
-                                                                    overflow = TextOverflow.Ellipsis
-                                                                )
-                                                            }
+                                                            Text(
+                                                                text = "$kmText · $durText · $paceText",
+                                                                color = RunColors.textSecondary,
+                                                                fontSize = 11.5.sp,
+                                                                maxLines = 1,
+                                                                softWrap = false,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
                                                         }
 
-                                                        val isAlreadyOfficial = officialRaces.any { it.linkedRunSessionId == session.id }
                                                         Row(
                                                             verticalAlignment = Alignment.CenterVertically,
-                                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                            horizontalArrangement = Arrangement.spacedBy(2.dp)
                                                         ) {
-                                                            if (isAlreadyOfficial) {
-                                                                Surface(
-                                                                    color = Color(0xFF00E676).copy(alpha = 0.16f),
-                                                                    shape = RoundedCornerShape(8.dp),
-                                                                    border = BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.6f))
-                                                                ) {
-                                                                    Row(
-                                                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
-                                                                        verticalAlignment = Alignment.CenterVertically,
-                                                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                                                                    ) {
-                                                                        Icon(
-                                                                            imageVector = Icons.Default.EmojiEvents,
-                                                                            contentDescription = null,
-                                                                            tint = Color(0xFF00E676),
-                                                                            modifier = Modifier.size(11.dp)
-                                                                        )
-                                                                        Text(
-                                                                            text = "PROVA",
-                                                                            color = Color(0xFF00E676),
-                                                                            fontSize = 9.5.sp,
-                                                                            fontWeight = FontWeight.Black,
-                                                                            maxLines = 1,
-                                                                            softWrap = false
-                                                                        )
-                                                                    }
-                                                                }
-                                                            }
                                                             IconButton(
                                                                 onClick = {
                                                                     AudioSynth.playTickSound()
@@ -2883,7 +2893,7 @@ fun RunningModuleScreen(viewModel: MainViewModel) {
                                                                 imageVector = Icons.Default.ChevronRight,
                                                                 contentDescription = "Ver detalhe",
                                                                 tint = RunColors.textSecondary,
-                                                                modifier = Modifier.size(20.dp)
+                                                                modifier = Modifier.size(18.dp)
                                                             )
                                                         }
                                                     }
@@ -4377,6 +4387,7 @@ fun RunningSessionHistoryItem(
     session: RunningSession,
     runningShoes: List<com.example.data.model.RunningShoe> = emptyList(),
     isSavedAsOfficialRace: Boolean = false,
+    linkedOfficialRaceName: String? = null,
     onSaveAsOfficialRaceClick: (() -> Unit)? = null,
     onClassifySessionClick: (() -> Unit)? = null,
     onSessionClick: (() -> Unit)? = null,
@@ -4442,8 +4453,15 @@ fun RunningSessionHistoryItem(
         }
     }
 
-    val dayTitle = RunningProgramManager.getDisplayTitleForSession(session)
-    val badgeLabel = RunningProgramManager.getBadgeLabelForSession(session)
+    val dayTitle = RunningProgramManager.getDisplayTitleForSession(
+        session = session,
+        isLinkedOfficialRace = isSavedAsOfficialRace,
+        linkedOfficialRaceName = linkedOfficialRaceName
+    )
+    val badgeLabel = RunningProgramManager.getBadgeLabelForSession(
+        session = session,
+        isLinkedOfficialRace = isSavedAsOfficialRace
+    )
     val isRaceSession = badgeLabel == "PROVA"
 
     val envLabel = when {
@@ -4663,35 +4681,6 @@ fun RunningSessionHistoryItem(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (isSavedAsOfficialRace) {
-                        Surface(
-                            color = Color(0xFF00E676).copy(alpha = 0.16f),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.6f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.EmojiEvents,
-                                    contentDescription = null,
-                                    tint = Color(0xFF00E676),
-                                    modifier = Modifier.size(11.dp)
-                                )
-                                Text(
-                                    text = "PROVA",
-                                    color = Color(0xFF00E676),
-                                    fontSize = 9.5.sp,
-                                    fontWeight = FontWeight.Black,
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
-                            }
-                        }
-                    }
-
                     IconButton(
                         onClick = {
                             val bitmap = generateCardBitmap(

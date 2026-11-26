@@ -192,6 +192,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } + record).sortedByDescending { it.dateMillis }
         _officialRaces.value = updated
         savePersistedOfficialRaces(updated)
+        record.linkedRunSessionId?.takeIf { it.isNotBlank() }?.let { linkedId ->
+            updateRunningSessionClassification(
+                sessionId = linkedId,
+                isRace = true,
+                raceName = record.raceName
+            )
+        }
     }
 
     fun deleteOfficialRaceRecord(raceId: String) {

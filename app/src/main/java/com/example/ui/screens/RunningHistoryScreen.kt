@@ -483,11 +483,12 @@ fun RunningHistoryScreen(viewModel: MainViewModel) {
                         }
 
                         items(monthSessions, key = { it.id }) { session ->
-                            val isSavedOfficial = officialRaces.any { it.linkedRunSessionId == session.id }
+                            val linkedOfficial = officialRaces.firstOrNull { it.linkedRunSessionId == session.id }
                             RunningSessionHistoryItem(
                                 session = session,
                                 runningShoes = runningShoes,
-                                isSavedAsOfficialRace = isSavedOfficial,
+                                isSavedAsOfficialRace = linkedOfficial != null,
+                                linkedOfficialRaceName = linkedOfficial?.raceName,
                                 onSaveAsOfficialRaceClick = null,
                                 onClassifySessionClick = {
                                     sessionToClassify = session
@@ -1037,8 +1038,13 @@ fun RunningHistoryScreen(viewModel: MainViewModel) {
     }
 
     sessionToClassify?.let { target ->
+        val linkedOfficial = remember(officialRaces, target.id) {
+            officialRaces.firstOrNull { it.linkedRunSessionId == target.id }
+        }
         com.example.ui.components.RunSessionClassificationDialog(
             session = target,
+            isLinkedOfficialRace = linkedOfficial != null,
+            linkedOfficialRaceName = linkedOfficial?.raceName,
             onDismiss = { sessionToClassify = null },
             onConfirm = { isRace, raceName ->
                 viewModel.updateRunningSessionClassification(

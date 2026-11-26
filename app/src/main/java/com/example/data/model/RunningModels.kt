@@ -389,15 +389,16 @@ data class AdvancedRunningMetrics(
     val raceName: String? = null
 )
 
-fun RunningSession.isClassifiedAsRace(): Boolean {
+fun RunningSession.isClassifiedAsRace(isLinkedOfficialRace: Boolean = false): Boolean {
     val override = advancedMetrics?.isRaceOverride
     if (override != null) return override
-    return sessionType.equals("RACE_5K", ignoreCase = true) ||
+    return isLinkedOfficialRace ||
+        sessionType.equals("RACE_5K", ignoreCase = true) ||
         sessionType.equals("RACE_10K", ignoreCase = true)
 }
 
-fun RunningSession.customRaceName(): String? {
-    if (!isClassifiedAsRace()) return null
+fun RunningSession.customRaceName(isLinkedOfficialRace: Boolean = false): String? {
+    if (!isClassifiedAsRace(isLinkedOfficialRace)) return null
     return advancedMetrics?.raceName?.trim()?.takeIf { it.isNotBlank() }
 }
 

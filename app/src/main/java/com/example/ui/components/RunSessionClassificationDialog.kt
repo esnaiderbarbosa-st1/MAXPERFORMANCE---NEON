@@ -69,15 +69,27 @@ private val SecondaryText = Color(0xFF94A3B8)
 @Composable
 fun RunSessionClassificationDialog(
     session: RunningSession,
+    isLinkedOfficialRace: Boolean = false,
+    linkedOfficialRaceName: String? = null,
     onDismiss: () -> Unit,
     onConfirm: (isRace: Boolean, raceName: String?) -> Unit
 ) {
-    var selectedIsRace by remember(session.id) { mutableStateOf(session.isClassifiedAsRace()) }
-    var raceNameInput by remember(session.id) { mutableStateOf(session.customRaceName().orEmpty()) }
+    var selectedIsRace by remember(session.id, isLinkedOfficialRace) {
+        mutableStateOf(session.isClassifiedAsRace(isLinkedOfficialRace))
+    }
+    var raceNameInput by remember(session.id, isLinkedOfficialRace, linkedOfficialRaceName) {
+        mutableStateOf(
+            session.customRaceName(isLinkedOfficialRace)
+                ?: if (session.isClassifiedAsRace(isLinkedOfficialRace)) linkedOfficialRaceName.orEmpty() else ""
+        )
+    }
     val baseOriginalTitle = remember(session.id) {
         RunningProgramManager.getDisplayTitleForSession(
             session.copy(
-                advancedMetrics = session.advancedMetrics?.copy(raceName = null)
+                advancedMetrics = (session.advancedMetrics ?: com.example.data.model.AdvancedRunningMetrics()).copy(
+                    isRaceOverride = false,
+                    raceName = null
+                )
             )
         )
     }
