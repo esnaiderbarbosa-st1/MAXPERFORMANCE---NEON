@@ -53,7 +53,7 @@ class FitnessRepository(private val db: AppDatabase) {
     }
 
     suspend fun deleteRunningSession(id: String) {
-        db.runningSessionDao().deleteRunningSessionById(id)
+        db.runningSessionDao().deleteRunningSessionWithGpsPoints(id)
     }
 
     suspend fun updateRunnerProfile(heightCm: Int, weightKg: Float, runningGoal: String, baselinePace: Float? = null) {

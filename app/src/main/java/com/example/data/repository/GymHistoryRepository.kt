@@ -9,11 +9,19 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 
 object GymHistoryRepository {
-    private const val PREFS_NAME = "max_performance_gym_history"
-    private const val KEY_SESSIONS_JSON = "gym_sessions_v1"
+    const val PREFS_NAME = "max_performance_gym_history"
+    const val KEY_SESSIONS_JSON = "gym_sessions_v1"
+    const val KEY_SEEDS_INITIALIZED = "gym_history_seeds_initialized"
+    const val KEY_CORRUPTED_RAW_JSON = "gym_history_corrupted_raw"
+    const val KEY_CORRUPTED_TIMESTAMP = "gym_history_corrupted_timestamp"
+
+    private const val TAG = "GymHistoryRepository"
 
     private val _sessions = MutableStateFlow<List<GymWorkoutSession>>(emptyList())
     val sessions: StateFlow<List<GymWorkoutSession>> = _sessions.asStateFlow()
+
+    private val _isCorruptedLockActive = MutableStateFlow(false)
+    val isCorruptedLockActive: StateFlow<Boolean> = _isCorruptedLockActive.asStateFlow()
 
     private var prefs: SharedPreferences? = null
 
@@ -22,6 +30,13 @@ object GymHistoryRepository {
             prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             loadSessions()
         }
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun resetForTesting() {
+        prefs = null
+        _sessions.value = emptyList()
+        _isCorruptedLockActive.value = false
     }
 
     private const val KEY_SEED_2026_10_30_APPLIED = "gym_seed_2026_10_30_v1"
@@ -242,82 +257,159 @@ object GymHistoryRepository {
     }
 
     private fun loadSessions() {
-        val jsonStr = prefs?.getString(KEY_SESSIONS_JSON, null) ?: "[]"
-        val seed30Applied = prefs?.getBoolean(KEY_SEED_2026_10_30_APPLIED, false) ?: false
-        val seed31Applied = prefs?.getBoolean(KEY_SEED_2026_10_31_APPLIED, false) ?: false
-        try {
-            val arr = JSONArray(jsonStr)
-            val list = mutableListOf<GymWorkoutSession>()
-            for (i in 0 until arr.length()) {
-                val s = GymWorkoutSession.fromJson(arr.getString(i))
-                if (s != null) {
-                    list.add(s)
-                }
-            }
-            var modified = false
-            if (!seed30Applied || list.none { it.id == OFFICIAL_FIELD_SESSION_2026_10_30_ID }) {
-                list.removeAll { it.id == OFFICIAL_FIELD_SESSION_2026_10_30_ID }
-                list.add(createOfficial30Oct2026FieldSession())
-                modified = true
-            }
-            if (!seed31Applied || list.none { it.id == OFFICIAL_FIELD_SESSION_2026_10_31_ID }) {
-                list.removeAll { it.id == OFFICIAL_FIELD_SESSION_2026_10_31_ID }
-                list.add(createOfficial31Oct2026FieldSession())
-                modified = true
-            }
-            _sessions.value = list.sortedByDescending { it.date }
-            if (modified) {
-                prefs?.edit()
-                    ?.putBoolean(KEY_SEED_2026_10_30_APPLIED, true)
-                    ?.putBoolean(KEY_SEED_2026_10_31_APPLIED, true)
-                    ?.apply()
-                persistToDisk()
-            }
+        val p = prefs ?: return
+        val hasStoredKey = p.contains(KEY_SESSIONS_JSON)
+        val rawJson = try {
+            p.getString(KEY_SESSIONS_JSON, null)
         } catch (e: Exception) {
-            val fallback = listOf(
-                createOfficial31Oct2026FieldSession(),
-                createOfficial30Oct2026FieldSession()
-            )
-            _sessions.value = fallback
-            prefs?.edit()
-                ?.putBoolean(KEY_SEED_2026_10_30_APPLIED, true)
-                ?.putBoolean(KEY_SEED_2026_10_31_APPLIED, true)
-                ?.apply()
-            persistToDisk()
+            android.util.Log.e(TAG, "Falha ao ler chave gym_sessions_v1; bloqueando sobrescrita destrutiva.", e)
+            _isCorruptedLockActive.value = true
+            _sessions.value = emptyList()
+            return
         }
+
+        val legacySeedsApplied = try {
+            p.getBoolean(KEY_SEED_2026_10_30_APPLIED, false) ||
+                p.getBoolean(KEY_SEED_2026_10_31_APPLIED, false)
+        } catch (_: ClassCastException) {
+            false
+        }
+        val seedsAlreadyInitialized = try {
+            p.getBoolean(KEY_SEEDS_INITIALIZED, false) || legacySeedsApplied
+        } catch (_: ClassCastException) {
+            legacySeedsApplied
+        }
+
+        // Caso 1: chave principal existente — fazer parsing estrito sem nunca sobrescrever dados corrompidos
+        if (hasStoredKey && rawJson != null) {
+            try {
+                val arr = JSONArray(rawJson)
+                val list = mutableListOf<GymWorkoutSession>()
+                for (i in 0 until arr.length()) {
+                    val itemJson = arr.getString(i)
+                    val parsed = GymWorkoutSession.fromJson(itemJson)
+                        ?: throw IllegalArgumentException("Item de historico corrompido no indice $i")
+                    list.add(parsed)
+                }
+                _isCorruptedLockActive.value = false
+                _sessions.value = list.distinctBy { it.id }.sortedByDescending { it.date }
+                // Compatibilidade com instalacoes anteriores que ja possuem historico salvo:
+                // marca seeds como inicializados sem reinserir registros seed.
+                if (!seedsAlreadyInitialized || !p.getBoolean(KEY_SEEDS_INITIALIZED, false)) {
+                    p.edit()
+                        .putBoolean(KEY_SEEDS_INITIALIZED, true)
+                        .putBoolean(KEY_SEED_2026_10_30_APPLIED, true)
+                        .putBoolean(KEY_SEED_2026_10_31_APPLIED, true)
+                        .apply()
+                }
+            } catch (e: Exception) {
+                quarantineCorruptedPayload(p, rawJson, e)
+            }
+            return
+        }
+
+        // Caso 2: sem chave de sessoes no disco
+        if (seedsAlreadyInitialized) {
+            _isCorruptedLockActive.value = false
+            _sessions.value = emptyList()
+            if (!p.getBoolean(KEY_SEEDS_INITIALIZED, false)) {
+                p.edit().putBoolean(KEY_SEEDS_INITIALIZED, true).apply()
+            }
+            return
+        }
+
+        // Primeira inicializacao real (instalacao limpa): grava seeds uma unica vez
+        val initialSeeds = listOf(
+            createOfficial31Oct2026FieldSession(),
+            createOfficial30Oct2026FieldSession()
+        ).sortedByDescending { it.date }
+        _isCorruptedLockActive.value = false
+        _sessions.value = initialSeeds
+        val arr = JSONArray()
+        initialSeeds.forEach { arr.put(it.toJson()) }
+        p.edit()
+            .putString(KEY_SESSIONS_JSON, arr.toString())
+            .putBoolean(KEY_SEEDS_INITIALIZED, true)
+            .putBoolean(KEY_SEED_2026_10_30_APPLIED, true)
+            .putBoolean(KEY_SEED_2026_10_31_APPLIED, true)
+            .apply()
     }
 
-    fun saveSession(context: Context, session: GymWorkoutSession) {
+    private fun quarantineCorruptedPayload(p: SharedPreferences, rawJson: String, error: Exception) {
+        android.util.Log.e(
+            TAG,
+            "JSON corrompido detectado em $KEY_SESSIONS_JSON; conteudo bruto preservado em quarentena e escrita bloqueada.",
+            error
+        )
+        _isCorruptedLockActive.value = true
+        _sessions.value = emptyList()
+        val editor = p.edit()
+        if (!p.contains(KEY_CORRUPTED_RAW_JSON) || p.getString(KEY_CORRUPTED_RAW_JSON, null) != rawJson) {
+            editor.putString(KEY_CORRUPTED_RAW_JSON, rawJson)
+        }
+        editor.putLong(KEY_CORRUPTED_TIMESTAMP, System.currentTimeMillis())
+        editor.apply()
+    }
+
+    fun saveSession(context: Context, session: GymWorkoutSession): Boolean {
         init(context)
+        if (_isCorruptedLockActive.value) {
+            android.util.Log.e(
+                TAG,
+                "Gravacao bloqueada em GymHistoryRepository: historico principal em quarentena por JSON corrompido (id=${session.id})."
+            )
+            return false
+        }
         val current = _sessions.value.toMutableList()
         current.removeAll { it.id == session.id }
         current.add(0, session)
         _sessions.value = current.sortedByDescending { it.date }
 
         persistToDisk()
+        return true
     }
 
-    fun deleteSession(context: Context, sessionId: String) {
+    fun deleteSession(context: Context, sessionId: String): Boolean {
         init(context)
+        if (_isCorruptedLockActive.value) {
+            android.util.Log.e(
+                TAG,
+                "Exclusao bloqueada em GymHistoryRepository: historico principal em quarentena por JSON corrompido (id=$sessionId)."
+            )
+            return false
+        }
         val current = _sessions.value.toMutableList()
         current.removeAll { it.id == sessionId }
         _sessions.value = current.sortedByDescending { it.date }
 
         persistToDisk()
+        return true
     }
 
     fun clearAllSessions(context: Context) {
         init(context)
+        _isCorruptedLockActive.value = false
         _sessions.value = emptyList()
-        prefs?.edit()?.remove(KEY_SESSIONS_JSON)?.apply()
+        prefs?.edit()
+            ?.putString(KEY_SESSIONS_JSON, "[]")
+            ?.putBoolean(KEY_SEEDS_INITIALIZED, true)
+            ?.putBoolean(KEY_SEED_2026_10_30_APPLIED, true)
+            ?.putBoolean(KEY_SEED_2026_10_31_APPLIED, true)
+            ?.remove(KEY_CORRUPTED_RAW_JSON)
+            ?.remove(KEY_CORRUPTED_TIMESTAMP)
+            ?.apply()
     }
 
     private fun persistToDisk() {
+        if (_isCorruptedLockActive.value) return
         val arr = JSONArray()
         _sessions.value.forEach { session ->
             arr.put(session.toJson())
         }
-        prefs?.edit()?.putString(KEY_SESSIONS_JSON, arr.toString())?.apply()
+        prefs?.edit()
+            ?.putString(KEY_SESSIONS_JSON, arr.toString())
+            ?.putBoolean(KEY_SEEDS_INITIALIZED, true)
+            ?.apply()
     }
 
     fun exportToTextReport(

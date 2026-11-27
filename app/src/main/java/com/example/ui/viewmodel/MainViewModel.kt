@@ -3548,9 +3548,120 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                       else if (userLvl.contains("avançado") || userLvl.contains("advanced")) 12.0
                                       else 8.5
 
+                // Pack final exercises back to JSON
+                val finalJson = JsonUtils.serializeWorkoutExercises(exercises)
+
+                // 1) Confirmar transicao para CONCLUIDO no Room ANTES de gravar no historico (GymHistoryRepository / WorkoutHistoryEntry)
+                val finishSid = currentSessionId.value
+                val finishTime = System.currentTimeMillis()
+                val currentBootCount = WorkoutTimeUtils.readBootCount(getApplication())
+                val savedBootCount = com.example.data.repository.WorkoutSessionRecoveryCoordinator.readSavedBootCount(sharedPrefs)
+
+                var roomTransitionSucceeded = false
+                var canonicalSessionId: String? = null
+                var resolvedFinishDuration = maxOf(0L, workoutDurationSeconds.value)
+
+                withContext(Dispatchers.IO) {
+                    sessionUpdateMutex.withLock {
+                        try {
+                            val sessionDb = if (finishSid != null) {
+                                repository.getWorkoutSessionById(finishSid)
+                            } else {
+                                repository.getActiveWorkoutSession()
+                            }
+                            val finishDur = if (sessionDb != null) {
+                                WorkoutTimeUtils.calculateSafeDurationSeconds(
+                                    startTimeMonotonic = sessionDb.startTimeMonotonic,
+                                    fallbackStartMillis = sessionDb.startTime,
+                                    monotonicStartTimeNanos = sessionDb.monotonicStartTimeNanos,
+                                    persistedDurationSeconds = maxOf(sessionDb.durationSeconds, workoutDurationSeconds.value),
+                                    savedBootCount = savedBootCount,
+                                    currentBootCount = currentBootCount
+                                )
+                            } else {
+                                maxOf(0L, workoutDurationSeconds.value)
+                            }
+                            val targetId = finishSid ?: sessionDb?.id
+                            if (targetId != null) {
+                                val success = if (sessionDb != null) {
+                                    repository.updateWorkoutSessionStatusExercisesAndDurationVersioned(
+                                        sessionId = targetId,
+                                        status = WorkoutSessionStatus.CONCLUIDO.rawValue,
+                                        newVersion = sessionDb.version + 1,
+                                        completedAt = finishTime,
+                                        durationSeconds = finishDur,
+                                        exercisesJson = finalJson
+                                    )
+                                } else {
+                                    repository.updateWorkoutSessionStatus(
+                                        sessionId = targetId,
+                                        status = WorkoutSessionStatus.CONCLUIDO.rawValue,
+                                        endTime = finishTime,
+                                        durationSeconds = finishDur
+                                    )
+                                }
+                                if (success) {
+                                    roomTransitionSucceeded = true
+                                    canonicalSessionId = targetId
+                                    resolvedFinishDuration = finishDur
+                                    com.example.engine.WorkoutEngine.clearCache()
+                                    withContext(Dispatchers.Main) {
+                                        homeRecommendationVersion.value += 1
+                                        lastSetCompletionTimes.clear()
+                                    }
+                                } else {
+                                    android.util.Log.e(
+                                        "MAX_PERFORMANCE_DEBUG",
+                                        "Falha na transicao para CONCLUIDO no Room (status nao era ATIVO ou conflito de versao) para $targetId; gravacao em GymHistoryRepository cancelada."
+                                    )
+                                }
+                            } else {
+                                val fallbackId = "hist_${UUID.randomUUID()}"
+                                val fallbackDur = maxOf(60L, workoutDurationSeconds.value)
+                                val fallbackSession = com.example.data.model.WorkoutSessionEntity(
+                                    id = fallbackId,
+                                    workoutId = workout.id,
+                                    workoutName = workout.name,
+                                    status = WorkoutSessionStatus.CONCLUIDO.rawValue,
+                                    startTime = maxOf(1L, finishTime - (workoutDurationSeconds.value * 1000L)),
+                                    endTime = finishTime,
+                                    completedAt = finishTime,
+                                    durationSeconds = fallbackDur,
+                                    exercisesJson = finalJson
+                                )
+                                repository.saveWorkoutSession(fallbackSession)
+                                roomTransitionSucceeded = true
+                                canonicalSessionId = fallbackId
+                                resolvedFinishDuration = fallbackDur
+                                com.example.engine.WorkoutEngine.clearCache()
+                                withContext(Dispatchers.Main) {
+                                    homeRecommendationVersion.value += 1
+                                    lastSetCompletionTimes.clear()
+                                }
+                            }
+                        } catch (ce: kotlinx.coroutines.CancellationException) {
+                            throw ce
+                        } catch (e: Exception) {
+                            android.util.Log.e(
+                                "MAX_PERFORMANCE_DEBUG",
+                                "Failed updating session to CONCLUIDO in Room; aborting GymHistoryRepository write",
+                                e
+                            )
+                            roomTransitionSucceeded = false
+                        }
+                    }
+                }
+
+                if (!roomTransitionSucceeded || canonicalSessionId == null) {
+                    workoutErrorMessage.value = "Não foi possível concluir o treino no banco local. Tente novamente."
+                    return@launch
+                }
+
+                val confirmedSessionId = canonicalSessionId!!
+
                 lastCompletedWorkoutSummary.value = CompletedWorkoutSummary(
                     workoutName = workout.name,
-                    durationSeconds = workoutDurationSeconds.value.toInt(),
+                    durationSeconds = resolvedFinishDuration.toInt(),
                     totalVolume = totalWeightLifted,
                     exercisesCompletedCount = completedExsCount,
                     setsCompletedCount = completedCount,
@@ -3562,20 +3673,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     completedExercises = exercises
                 )
 
-                // Pack final exercises back to JSON
-                val finalJson = JsonUtils.serializeWorkoutExercises(exercises)
-
                 val historyEntry = WorkoutHistoryEntry(
-                    id = "hist_${UUID.randomUUID()}",
+                    id = confirmedSessionId,
                     workoutId = workout.id,
                     workoutName = workout.name,
-                    durationSeconds = workoutDurationSeconds.value,
+                    date = finishTime,
+                    durationSeconds = resolvedFinishDuration,
                     totalWeight = totalWeightLifted,
                     exercisesCompletedCount = completedExsCount,
                     exercisesJson = finalJson
                 )
 
-                // Save history safely
+                // Save history safely (idempotent by canonicalSessionId)
                 var saveSucceeded = false
                 try {
                     repository.addHistoryEntry(historyEntry)
@@ -3584,13 +3693,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     android.util.Log.e("MAX_PERFORMANCE_DEBUG", "DB Error adding history entry", dbEx)
                 }
 
-                // Gravação Imediata ao Finalizar: Salva objeto completo GymWorkoutSession de forma persistente
+                // 2) Somente apos confirmacao no Room: grava GymWorkoutSession de forma idempotente por sessionId
                 try {
                     val gymSession = com.example.data.model.GymWorkoutSession(
-                        id = historyEntry.id,
+                        id = confirmedSessionId,
                         date = historyEntry.date,
                         workoutName = workout.name,
-                        durationSeconds = workoutDurationSeconds.value.toInt(),
+                        durationSeconds = resolvedFinishDuration.toInt(),
                         totalVolumeKg = totalWeightLifted,
                         totalSets = totalPlannedSetsVal,
                         completedSets = completedCount,
@@ -3611,7 +3720,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             )
                         },
                         notes = exercises.filter { it.notes.isNotBlank() }
-                            .joinToString(separator = " • ") { "${it.name}: ${it.notes}" }
+                            .joinToString(separator = " | ") { "${it.name}: ${it.notes}" }
                     )
                     com.example.data.repository.GymHistoryRepository.saveSession(getApplication(), gymSession)
                 } catch (gymEx: Exception) {
@@ -3622,7 +3731,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // Log Telemetry: WORKOUT_FINISHED
                     com.example.services.telemetry.Telemetry.log(
                         com.example.data.model.TelemetryEventType.WORKOUT_FINISHED,
-                        mapOf("workout_id" to workout.id, "workout_name" to workout.name, "duration_seconds" to workoutDurationSeconds.value)
+                        mapOf("workout_id" to workout.id, "workout_name" to workout.name, "duration_seconds" to resolvedFinishDuration)
                     )
 
                     // Log Telemetry: RECOVERY_UPDATED
@@ -3727,79 +3836,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 tickerJob?.cancel()
                 showGymSavePrompt.value = true
 
-                val finishSid = currentSessionId.value
-                val finishTime = System.currentTimeMillis()
-                val currentBootCount = WorkoutTimeUtils.readBootCount(getApplication())
-                val savedBootCount = com.example.data.repository.WorkoutSessionRecoveryCoordinator.readSavedBootCount(sharedPrefs)
-                withContext(Dispatchers.IO) {
-                    sessionUpdateMutex.withLock {
-                        try {
-                            val sessionDb = finishSid?.let { repository.getWorkoutSessionById(it) } 
-                                ?: repository.getActiveWorkoutSession()
-                            val finishDur = if (sessionDb != null) {
-                                WorkoutTimeUtils.calculateSafeDurationSeconds(
-                                    startTimeMonotonic = sessionDb.startTimeMonotonic,
-                                    fallbackStartMillis = sessionDb.startTime,
-                                    monotonicStartTimeNanos = sessionDb.monotonicStartTimeNanos,
-                                    persistedDurationSeconds = maxOf(sessionDb.durationSeconds, workoutDurationSeconds.value),
-                                    savedBootCount = savedBootCount,
-                                    currentBootCount = currentBootCount
-                                )
-                            } else {
-                                maxOf(0L, workoutDurationSeconds.value)
-                            }
-                            val targetId = finishSid ?: sessionDb?.id
-                            if (targetId != null) {
-                                val success = if (sessionDb != null) {
-                                    repository.updateWorkoutSessionStatusExercisesAndDurationVersioned(
-                                        sessionId = targetId,
-                                        status = WorkoutSessionStatus.CONCLUIDO.rawValue,
-                                        newVersion = sessionDb.version + 1,
-                                        completedAt = finishTime,
-                                        durationSeconds = finishDur,
-                                        exercisesJson = finalJson
-                                    )
-                                } else {
-                                    repository.updateWorkoutSessionStatus(
-                                        sessionId = targetId,
-                                        status = WorkoutSessionStatus.CONCLUIDO.rawValue,
-                                        endTime = finishTime,
-                                        durationSeconds = finishDur
-                                    )
-                                }
-                                if (success) {
-                                    com.example.engine.WorkoutEngine.clearCache()
-                                    withContext(Dispatchers.Main) {
-                                        homeRecommendationVersion.value += 1
-                                        lastSetCompletionTimes.clear()
-                                    }
-                                } else {
-                                    android.util.Log.e("MAX_PERFORMANCE_DEBUG", "Falha na transição para CONCLUIDO (status não era ATIVO ou conflito de concorrência)")
-                                }
-                            } else {
-                                val fallbackSession = com.example.data.model.WorkoutSessionEntity(
-                                    id = historyEntry.id,
-                                    workoutId = workout.id,
-                                    workoutName = workout.name,
-                                    status = WorkoutSessionStatus.CONCLUIDO.rawValue,
-                                    startTime = maxOf(1L, finishTime - (workoutDurationSeconds.value * 1000L)),
-                                    endTime = finishTime,
-                                    completedAt = finishTime,
-                                    durationSeconds = maxOf(60L, workoutDurationSeconds.value),
-                                    exercisesJson = finalJson
-                                )
-                                repository.saveWorkoutSession(fallbackSession)
-                                com.example.engine.WorkoutEngine.clearCache()
-                                withContext(Dispatchers.Main) {
-                                    homeRecommendationVersion.value += 1
-                                    lastSetCompletionTimes.clear()
-                                }
-                            }
-                        } catch (e: Exception) {
-                            android.util.Log.e("MAX_PERFORMANCE_DEBUG", "Failed updating session to CONCLUIDO in Room", e)
-                        }
-                    }
-                }
                 currentSessionId.value = null
                 activeSessionsList.value = emptyList()
                 showActiveSessionPrompt.value = false
