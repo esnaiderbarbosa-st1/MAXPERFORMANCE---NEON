@@ -79,23 +79,103 @@ object WorkoutSessionValidator {
 }
 
 object WorkoutTimeUtils {
+    private const val MAX_BOOT_EPOCH_DRIFT_MS = 120_000L
+
+    fun readBootCount(context: android.content.Context): Int? {
+        return try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                android.provider.Settings.Global.getInt(
+                    context.contentResolver,
+                    android.provider.Settings.Global.BOOT_COUNT
+                )
+            } else {
+                null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun hasDeviceRebooted(
+        savedBootCount: Int?,
+        currentBootCount: Int?,
+        startTimeMonotonic: Long,
+        fallbackStartMillis: Long,
+        nowMonotonic: Long = android.os.SystemClock.elapsedRealtime(),
+        nowWallMillis: Long = System.currentTimeMillis()
+    ): Boolean {
+        if (savedBootCount != null && currentBootCount != null && savedBootCount != currentBootCount) {
+            return true
+        }
+        if (startTimeMonotonic > 0L && nowMonotonic < startTimeMonotonic) {
+            return true
+        }
+        if (startTimeMonotonic > 0L && fallbackStartMillis > 0L && nowWallMillis >= fallbackStartMillis) {
+            val estimatedBootEpochMillis = nowWallMillis - nowMonotonic
+            if (estimatedBootEpochMillis > fallbackStartMillis + MAX_BOOT_EPOCH_DRIFT_MS) {
+                return true
+            }
+        }
+        return false
+    }
+
+    fun calculateSafeDurationSeconds(
+        startTimeMonotonic: Long,
+        fallbackStartMillis: Long,
+        monotonicStartTimeNanos: Long = 0L,
+        persistedDurationSeconds: Long = 0L,
+        savedBootCount: Int? = null,
+        currentBootCount: Int? = null,
+        nowMonotonic: Long = android.os.SystemClock.elapsedRealtime(),
+        nowNanos: Long = System.nanoTime(),
+        nowWallMillis: Long = System.currentTimeMillis()
+    ): Long {
+        val safePersisted = maxOf(0L, persistedDurationSeconds)
+        val wallDuration = if (fallbackStartMillis > 0L) {
+            maxOf(0L, (nowWallMillis - fallbackStartMillis) / 1000L)
+        } else {
+            0L
+        }
+
+        val rebooted = hasDeviceRebooted(
+            savedBootCount = savedBootCount,
+            currentBootCount = currentBootCount,
+            startTimeMonotonic = startTimeMonotonic,
+            fallbackStartMillis = fallbackStartMillis,
+            nowMonotonic = nowMonotonic,
+            nowWallMillis = nowWallMillis
+        )
+
+        if (rebooted) {
+            // Monotonic clocks reset on reboot; never subtract pre-reboot monotonic timestamps
+            // nor fall through to System.nanoTime(). Preserve last persisted duration checkpoint
+            // when available, otherwise use non-negative wall-clock elapsed time.
+            return if (safePersisted > 0L) safePersisted else wallDuration
+        }
+
+        if (startTimeMonotonic > 0L && nowMonotonic >= startTimeMonotonic) {
+            val diffSeconds = maxOf(0L, (nowMonotonic - startTimeMonotonic) / 1000L)
+            return maxOf(diffSeconds, safePersisted)
+        }
+
+        if (monotonicStartTimeNanos > 0L && nowNanos >= monotonicStartTimeNanos) {
+            val diffSeconds = maxOf(0L, (nowNanos - monotonicStartTimeNanos) / 1_000_000_000L)
+            return maxOf(diffSeconds, safePersisted)
+        }
+
+        return maxOf(wallDuration, safePersisted)
+    }
+
     fun calculateMonotonicDurationSeconds(
         startTimeMonotonic: Long,
         fallbackStartMillis: Long,
         monotonicStartTimeNanos: Long = 0L
     ): Long {
-        val nowMonotonic = android.os.SystemClock.elapsedRealtime()
-        if (startTimeMonotonic > 0L && nowMonotonic >= startTimeMonotonic) {
-            val diffSeconds = (nowMonotonic - startTimeMonotonic) / 1000L
-            return maxOf(0L, diffSeconds)
-        }
-        val nowNanos = System.nanoTime()
-        if (monotonicStartTimeNanos > 0L && nowNanos >= monotonicStartTimeNanos) {
-            val diffSeconds = (nowNanos - monotonicStartTimeNanos) / 1_000_000_000L
-            return maxOf(0L, diffSeconds)
-        }
-        val nowMillis = System.currentTimeMillis()
-        return maxOf(0L, (nowMillis - fallbackStartMillis) / 1000L)
+        return calculateSafeDurationSeconds(
+            startTimeMonotonic = startTimeMonotonic,
+            fallbackStartMillis = fallbackStartMillis,
+            monotonicStartTimeNanos = monotonicStartTimeNanos
+        )
     }
 }
 

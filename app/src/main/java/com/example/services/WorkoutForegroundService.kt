@@ -23,6 +23,15 @@ object WorkoutServiceState {
     val tempoTimeTotal = kotlinx.coroutines.flow.MutableStateFlow(0)
 
     @Volatile
+    var isWorkoutClockRunning: Boolean = false
+
+    @Volatile
+    var workoutClockBaseDurationSeconds: Long = 0L
+
+    @Volatile
+    var workoutClockAnchorElapsedRealtime: Long = 0L
+
+    @Volatile
     var workoutStartElapsedRealtime: Long = 0L
 
     @Volatile
@@ -40,12 +49,26 @@ object WorkoutServiceState {
     @Volatile
     var lastCountdownBeepSec: Int = -1
 
-    fun startOrSyncWorkoutClock(initialElapsedSec: Long = 0L) {
-        val nowElapsed = SystemClock.elapsedRealtime()
-        val nowWall = System.currentTimeMillis()
-        workoutStartElapsedRealtime = nowElapsed - (initialElapsedSec.coerceAtLeast(0L) * 1000L)
-        workoutStartWallClockMillis = nowWall - (initialElapsedSec.coerceAtLeast(0L) * 1000L)
-        workoutDurationSeconds.value = initialElapsedSec.coerceAtLeast(0L)
+    fun startOrSyncWorkoutClock(
+        initialElapsedSec: Long = 0L,
+        nowElapsed: Long = SystemClock.elapsedRealtime(),
+        nowWall: Long = System.currentTimeMillis()
+    ) {
+        val safeInitial = initialElapsedSec.coerceAtLeast(0L)
+        workoutClockBaseDurationSeconds = safeInitial
+        workoutClockAnchorElapsedRealtime = nowElapsed
+        isWorkoutClockRunning = true
+        workoutStartElapsedRealtime = nowElapsed - (safeInitial * 1000L)
+        workoutStartWallClockMillis = nowWall - (safeInitial * 1000L)
+        workoutDurationSeconds.value = safeInitial
+    }
+
+    fun clearWorkoutClock() {
+        isWorkoutClockRunning = false
+        workoutClockBaseDurationSeconds = 0L
+        workoutClockAnchorElapsedRealtime = 0L
+        workoutStartElapsedRealtime = 0L
+        workoutStartWallClockMillis = 0L
     }
 
     fun startRestClock(durationSec: Int) {
@@ -118,8 +141,13 @@ object WorkoutServiceState {
     }
 
     fun computeWorkoutDurationSeconds(nowElapsed: Long = SystemClock.elapsedRealtime()): Long {
-        if (workoutStartElapsedRealtime <= 0L) return workoutDurationSeconds.value
-        return kotlin.math.max(0L, (nowElapsed - workoutStartElapsedRealtime) / 1000L)
+        if (!isWorkoutClockRunning) return workoutDurationSeconds.value
+        val deltaSinceAnchorSec = if (nowElapsed >= workoutClockAnchorElapsedRealtime) {
+            (nowElapsed - workoutClockAnchorElapsedRealtime) / 1000L
+        } else {
+            0L
+        }
+        return kotlin.math.max(0L, workoutClockBaseDurationSeconds + deltaSinceAnchorSec)
     }
 
     /**
@@ -128,7 +156,7 @@ object WorkoutServiceState {
      * Retorna `true` se o descanso acabou exatamente nesta transição para 0.
      */
     fun recalculateNowFromPhysicalClock(nowElapsed: Long = SystemClock.elapsedRealtime()): Boolean {
-        if (workoutStartElapsedRealtime > 0L) {
+        if (isWorkoutClockRunning) {
             workoutDurationSeconds.value = computeWorkoutDurationSeconds(nowElapsed)
         }
         var restJustCompleted = false
@@ -238,8 +266,7 @@ class WorkoutForegroundService : Service() {
         fun stopServiceAndClearNotifications(context: Context) {
             isWorkoutActive = false
             isServiceRunning = false
-            WorkoutServiceState.workoutStartElapsedRealtime = 0L
-            WorkoutServiceState.workoutStartWallClockMillis = 0L
+            WorkoutServiceState.clearWorkoutClock()
             WorkoutServiceState.resetTimers()
             runCatching {
                 context.stopService(Intent(context, WorkoutForegroundService::class.java))
@@ -313,7 +340,7 @@ class WorkoutForegroundService : Service() {
                     isServiceRunning = true
                     isWorkoutActive = true
                     workoutName = intent.getStringExtra(EXTRA_WORKOUT_NAME) ?: "Treino Ativo"
-                    if (WorkoutServiceState.workoutStartElapsedRealtime <= 0L) {
+                    if (!WorkoutServiceState.isWorkoutClockRunning) {
                         WorkoutServiceState.startOrSyncWorkoutClock(workoutDurationSeconds)
                     }
                     soundOption = intent.getStringExtra(EXTRA_SOUND_OPTION) ?: "default"
@@ -326,7 +353,7 @@ class WorkoutForegroundService : Service() {
                 ACTION_START_REST -> {
                     isServiceRunning = true
                     isWorkoutActive = true
-                    if (WorkoutServiceState.workoutStartElapsedRealtime <= 0L) {
+                    if (!WorkoutServiceState.isWorkoutClockRunning) {
                         WorkoutServiceState.startOrSyncWorkoutClock(workoutDurationSeconds)
                     }
                     val duration = intent.getIntExtra(EXTRA_REST_DURATION, 60)
@@ -400,8 +427,7 @@ class WorkoutForegroundService : Service() {
     private fun stopSelfAndClearNotifications() {
         isServiceRunning = false
         isWorkoutActive = false
-        WorkoutServiceState.workoutStartElapsedRealtime = 0L
-        WorkoutServiceState.workoutStartWallClockMillis = 0L
+        WorkoutServiceState.clearWorkoutClock()
         WorkoutServiceState.resetTimers()
         try {
             countdownRunnable?.let { handler?.removeCallbacks(it) }
@@ -426,8 +452,7 @@ class WorkoutForegroundService : Service() {
     override fun onDestroy() {
         isServiceRunning = false
         isWorkoutActive = false
-        WorkoutServiceState.workoutStartElapsedRealtime = 0L
-        WorkoutServiceState.workoutStartWallClockMillis = 0L
+        WorkoutServiceState.clearWorkoutClock()
         WorkoutServiceState.resetTimers()
         Log.d(TAG, "Service being destroyed - cleaning up resources safely")
         
@@ -483,7 +508,7 @@ class WorkoutForegroundService : Service() {
                 }
 
                 // 1. Tempo total do treino por diferença de timestamp real
-                if (WorkoutServiceState.workoutStartElapsedRealtime <= 0L) {
+                if (!WorkoutServiceState.isWorkoutClockRunning) {
                     WorkoutServiceState.startOrSyncWorkoutClock(workoutDurationSeconds)
                 }
                 workoutDurationSeconds = WorkoutServiceState.computeWorkoutDurationSeconds(nowElapsed)

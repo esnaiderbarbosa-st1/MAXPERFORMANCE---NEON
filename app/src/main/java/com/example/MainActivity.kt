@@ -399,6 +399,9 @@ class MainActivity : ComponentActivity() {
             isWorkoutActive = viewModel.isGymWorkoutActivelyRunning(),
             isRunningActive = isRunningSessionActive || viewModel.isRunningHudActive.value
         )
+        if (viewModel.isInitialSessionRecoveryDone.value && !viewModel.isSessionRecoveryCompleted()) {
+            viewModel.checkActiveSessions()
+        }
         runCatching {
             val activeNow = (getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager)?.isMusicActive == true
             com.example.services.RunTracker.updateSystemMusicPlayingState(activeNow)

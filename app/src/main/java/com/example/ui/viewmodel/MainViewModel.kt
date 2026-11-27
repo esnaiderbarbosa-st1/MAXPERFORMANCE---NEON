@@ -14,7 +14,9 @@ import com.example.services.ai.GeminiService
 import com.example.utils.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -798,6 +800,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val sessionToDiscardConfirm = MutableStateFlow<WorkoutSessionEntity?>(null)
     val showNoSetsDialog = MutableStateFlow(false)
     private val sessionUpdateMutex = kotlinx.coroutines.sync.Mutex()
+    private val isSessionRecoveryCompleted = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val autoSaveInitialized = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val isRecoveryInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val isConfirmingWorkoutStart = java.util.concurrent.atomic.AtomicBoolean(false)
+    val isInitialSessionRecoveryDone = MutableStateFlow(false)
     val isPreSessionActive = MutableStateFlow(false)
     val workoutWarningState = MutableStateFlow<WorkoutWarningData?>(null)
     val workoutErrorMessage = MutableStateFlow<String?>(null)
@@ -1188,6 +1195,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             ex.copy(restTimeSeconds = sanitized)
         }
         activeExercises.value = updatedList
+        persistActiveSessionToRoom()
         saveActiveSession()  // persistir
     }
 
@@ -1244,6 +1252,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         currentList.add(newWorkoutExercise)
         activeExercises.value = currentList
         
+        persistActiveSessionToRoom()
         saveActiveSession()
     }
 
@@ -1596,11 +1605,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            // Consultar todas as sessões com status ATIVO no Room
-            checkActiveSessions()
-
-            // Set up active session auto-save after the restore operation has completed
-            setupActiveSessionAutoSave()
+            // Consultar sessões ativas no Room (e fallback validado em SharedPreferences).
+            // A recuperação só é considerada concluída — e o auto-save habilitado — quando houver decisão válida.
+            val recoveryResolved = checkActiveSessionsInternal()
+            if (!recoveryResolved) {
+                android.util.Log.w(
+                    "MAX_PERFORMANCE_DEBUG",
+                    "Recuperação inicial inconclusiva por falha de infraestrutura; auto-save permanece bloqueado para proteger o fallback."
+                )
+            }
+            isInitialSessionRecoveryDone.value = true
         }
 
         // Restore active gym context persistently across sessions and builds
@@ -1697,79 +1711,106 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun isSessionRecoveryCompleted(): Boolean = isSessionRecoveryCompleted.get()
+
+    @androidx.annotation.VisibleForTesting
+    internal var startupRecoveryResolverOverride: (suspend () -> com.example.data.repository.WorkoutSessionRecoveryCoordinator.StartupRecoveryOutcome)? = null
+
     fun checkActiveSessions() {
-        viewModelScope.launch(Dispatchers.IO) {
+        if (!isRecoveryInFlight.compareAndSet(false, true)) return
+        viewModelScope.launch {
             try {
-                val activeSessions = repository.getAllActiveWorkoutSessions()
-                if (activeSessions.size > 1) {
-                    // Edge Case Crítico: múltiplas sessões ativas encontradas.
-                    // Não crashar: manter apenas a mais recente (maior startTimeMonotonic ou startTime).
-                    val mostRecent = activeSessions.maxByOrNull { 
-                        maxOf(it.startTimeMonotonic, it.startTime)
-                    } ?: activeSessions.first()
-
-                    val toArchive = activeSessions.filter { it.id != mostRecent.id }
-                    val archiveTimestamp = System.currentTimeMillis()
-
-                    android.util.Log.w(
-                        "MAX_PERFORMANCE_DEBUG",
-                        "⚠️ Concorrência detectada: ${activeSessions.size} sessões ATIVO encontradas. Mantendo a mais recente [${mostRecent.id} - ${mostRecent.workoutName}] e arquivando ${toArchive.size} sessões antigas como NAO_REALIZADO."
-                    )
-
-                    for (oldSession in toArchive) {
-                        val dur = WorkoutTimeUtils.calculateMonotonicDurationSeconds(
-                            oldSession.startTimeMonotonic,
-                            oldSession.startTime,
-                            oldSession.monotonicStartTimeNanos
-                        )
-                        val success = repository.updateWorkoutSessionStatusVersioned(
-                            sessionId = oldSession.id,
-                            status = WorkoutSessionStatus.NAO_REALIZADO.rawValue,
-                            newVersion = oldSession.version + 1,
-                            completedAt = archiveTimestamp,
-                            durationSeconds = dur
-                        )
-                        android.util.Log.w(
-                            "MAX_PERFORMANCE_DEBUG",
-                            "Sessão anterior arquivada com status NAO_REALIZADO [id=${oldSession.id}, treino=${oldSession.workoutName}, sucesso=$success]"
-                        )
-                    }
-
-                    val archivedNames = toArchive.joinToString(", ") { it.workoutName }
-                    val notifyMessage = if (toArchive.size == 1) {
-                        "Uma sessão anterior incompleta ($archivedNames) foi arquivada automaticamente."
-                    } else {
-                        "${toArchive.size} sessões anteriores incompletas foram arquivadas automaticamente."
-                    }
-
-                    withContext(Dispatchers.Main) {
-                        activeSessionsList.value = listOf(mostRecent)
-                        currentSessionId.value = mostRecent.id
-                        isMultipleActiveSessionsConflict.value = false
-                        showActiveSessionPrompt.value = true
-                        sessionArchivedNotification.value = notifyMessage
-                    }
-                } else if (activeSessions.size == 1) {
-                    val single = activeSessions.first()
-                    withContext(Dispatchers.Main) {
-                        activeSessionsList.value = activeSessions
-                        currentSessionId.value = single.id
-                        isMultipleActiveSessionsConflict.value = false
-                        showActiveSessionPrompt.value = true
-                    }
-                } else {
-                    withContext(Dispatchers.Main) {
-                        activeSessionsList.value = emptyList()
-                        currentSessionId.value = null
-                        isMultipleActiveSessionsConflict.value = false
-                        showActiveSessionPrompt.value = false
-                    }
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("MAX_PERFORMANCE_DEBUG", "Erro ao checar sessões ativas no Room", e)
+                checkActiveSessionsInternal()
+            } finally {
+                isRecoveryInFlight.set(false)
             }
         }
     }
+
+    private suspend fun checkActiveSessionsInternal(): Boolean {
+        val override = startupRecoveryResolverOverride
+        return if (override != null) {
+            runStartupRecovery(override)
+        } else {
+            runStartupRecovery {
+                com.example.data.repository.WorkoutSessionRecoveryCoordinator.resolveStartupRecovery(
+                    repository = repository,
+                    sharedPrefs = sharedPrefs,
+                    currentBootCount = WorkoutTimeUtils.readBootCount(getApplication())
+                )
+            }
+        }
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal suspend fun runStartupRecovery(
+        resolver: suspend () -> com.example.data.repository.WorkoutSessionRecoveryCoordinator.StartupRecoveryOutcome
+    ): Boolean {
+        return try {
+            val outcome = withContext(Dispatchers.IO) {
+                sessionUpdateMutex.withLock {
+                    resolver()
+                }
+            }
+            if (!outcome.isDecisionValid) {
+                android.util.Log.e(
+                    "MAX_PERFORMANCE_DEBUG",
+                    "Recuperação de sessão retornou estado inválido (${outcome.source}); mantendo auto-save bloqueado."
+                )
+                return false
+            }
+
+            withContext(Dispatchers.Main) {
+                val active = outcome.activeSession
+                if (active != null) {
+                    activeSessionsList.value = listOf(active)
+                    currentSessionId.value = active.id
+                    isMultipleActiveSessionsConflict.value = false
+                    // Only prompt if the user is not already actively running this session in memory
+                    if (workoutFlowState.value != WorkoutFlowState.Running || activeWorkout.value == null) {
+                        showActiveSessionPrompt.value = true
+                    }
+                    if (outcome.archivedNotificationMessage != null) {
+                        sessionArchivedNotification.value = outcome.archivedNotificationMessage
+                    }
+                } else {
+                    activeSessionsList.value = emptyList()
+                    if (workoutFlowState.value != WorkoutFlowState.Running) {
+                        currentSessionId.value = null
+                    }
+                    isMultipleActiveSessionsConflict.value = false
+                    showActiveSessionPrompt.value = false
+                }
+            }
+            isSessionRecoveryCompleted.set(true)
+            setupActiveSessionAutoSave()
+            true
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            currentCoroutineContext().ensureActive()
+            android.util.Log.e(
+                "MAX_PERFORMANCE_DEBUG",
+                "Cancelamento interno de infraestrutura durante recuperação de sessões; mantendo auto-save bloqueado para preservar fallback",
+                ce
+            )
+            false
+        } catch (e: Exception) {
+            android.util.Log.e(
+                "MAX_PERFORMANCE_DEBUG",
+                "Erro inesperado durante recuperação de sessões; mantendo auto-save bloqueado para preservar fallback",
+                e
+            )
+            false
+        }
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun resetRecoveryGateForTesting() {
+        isSessionRecoveryCompleted.set(false)
+        autoSaveInitialized.set(false)
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun isSessionRecoveryConfirmed(): Boolean = isSessionRecoveryCompleted.get()
 
     fun acceptLevelUpSuggestion(newLevel: String) {
         viewModelScope.launch {
@@ -1936,63 +1977,100 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
             try {
+                // Guarda obrigatória: exigir decisão válida de recuperação antes de iniciar qualquer treino
+                if (!isSessionRecoveryCompleted.get()) {
+                    val resolved = checkActiveSessionsInternal()
+                    if (!resolved || !isSessionRecoveryCompleted.get()) {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                            workoutErrorMessage.value = "Não foi possível verificar sessões pendentes no momento. Tente novamente antes de iniciar um novo treino."
+                            sessionPrepStatus.value = com.example.services.telemetry.SessionPrepStepState(isPreparing = false)
+                        }
+                        prepTrace.finishTrace(isSuccess = false, errorMessage = "Recuperação de sessões pendente ou falhou")
+                        return@launch
+                    }
+                    if (showActiveSessionPrompt.value || activeSessionsList.value.isNotEmpty()) {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                            workoutErrorMessage.value = "Você possui um treino em andamento. Retome ou descarte a sessão antes de iniciar um novo treino."
+                            sessionPrepStatus.value = com.example.services.telemetry.SessionPrepStepState(isPreparing = false)
+                        }
+                        prepTrace.finishTrace(isSuccess = false, errorMessage = "Sessão pendente encontrada durante retentativa de recuperação")
+                        return@launch
+                    }
+                }
+
                 // Garantir no máximo uma sessão ativa: verificar se já existe sessão ATIVO
                 val activeSessions = repository.getAllActiveWorkoutSessions()
                 if (activeSessions.isNotEmpty()) {
-                    if (activeSessions.size > 1) {
-                        val mostRecent = activeSessions.maxByOrNull { 
-                            maxOf(it.startTimeMonotonic, it.startTime)
-                        } ?: activeSessions.first()
-                        val toArchive = activeSessions.filter { it.id != mostRecent.id }
+                    val validSessions = activeSessions.filter {
+                        com.example.data.repository.WorkoutSessionRecoveryCoordinator.parseAndSanitizeExercises(it.exercisesJson) != null
+                    }
+                    val chosen = if (validSessions.isNotEmpty()) {
+                        com.example.data.repository.WorkoutSessionRecoveryCoordinator.pickMostRecentActiveSession(validSessions)
+                    } else {
+                        null
+                    }
+                    val toArchive = if (chosen != null) {
+                        activeSessions.filter { it.id != chosen.id }
+                    } else {
+                        activeSessions
+                    }
+
+                    var archivedCount = 0
+                    val archivedNamesList = mutableListOf<String>()
+                    if (toArchive.isNotEmpty()) {
                         val archiveTimestamp = System.currentTimeMillis()
+                        val currentBootCount = WorkoutTimeUtils.readBootCount(getApplication())
                         android.util.Log.w(
                             "MAX_PERFORMANCE_DEBUG",
-                            "⚠️ Múltiplas sessões em startWorkoutSession: mantendo ${mostRecent.id} e arquivando ${toArchive.size} antigas."
+                            "⚠️ Reconciliando sessões em startWorkoutSession: mantendo ${chosen?.id ?: "nenhuma"} e arquivando ${toArchive.size} antigas/corrompidas."
                         )
                         for (oldSession in toArchive) {
-                            val dur = WorkoutTimeUtils.calculateMonotonicDurationSeconds(
-                                oldSession.startTimeMonotonic,
-                                oldSession.startTime,
-                                oldSession.monotonicStartTimeNanos
+                            val dur = WorkoutTimeUtils.calculateSafeDurationSeconds(
+                                startTimeMonotonic = oldSession.startTimeMonotonic,
+                                fallbackStartMillis = oldSession.startTime,
+                                monotonicStartTimeNanos = oldSession.monotonicStartTimeNanos,
+                                persistedDurationSeconds = oldSession.durationSeconds,
+                                currentBootCount = currentBootCount
                             )
-                            repository.updateWorkoutSessionStatusVersioned(
+                            val updated = repository.updateWorkoutSessionStatusVersioned(
                                 sessionId = oldSession.id,
                                 status = WorkoutSessionStatus.NAO_REALIZADO.rawValue,
                                 newVersion = oldSession.version + 1,
                                 completedAt = archiveTimestamp,
                                 durationSeconds = dur
                             )
+                            if (updated) {
+                                archivedCount++
+                                archivedNamesList.add(oldSession.workoutName)
+                            }
                         }
-                        val archivedNames = toArchive.joinToString(", ") { it.workoutName }
-                        val notifyMsg = if (toArchive.size == 1) {
-                            "Uma sessão anterior incompleta ($archivedNames) foi arquivada automaticamente."
+                    }
+
+                    if (chosen != null) {
+                        val notifyMsg = if (archivedCount > 0) {
+                            val archivedNames = archivedNamesList.joinToString(", ")
+                            if (archivedCount == 1) {
+                                "Uma sessão anterior incompleta ($archivedNames) foi arquivada automaticamente."
+                            } else {
+                                "$archivedCount sessões anteriores incompletas foram arquivadas automaticamente."
+                            }
                         } else {
-                            "${toArchive.size} sessões anteriores incompletas foram arquivadas automaticamente."
+                            null
                         }
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
-                            activeSessionsList.value = listOf(mostRecent)
-                            currentSessionId.value = mostRecent.id
+                            activeSessionsList.value = listOf(chosen)
+                            currentSessionId.value = chosen.id
                             isMultipleActiveSessionsConflict.value = false
                             showActiveSessionPrompt.value = true
-                            sessionArchivedNotification.value = notifyMsg
+                            if (notifyMsg != null) {
+                                sessionArchivedNotification.value = notifyMsg
+                            }
                             workoutErrorMessage.value = "Você possui um treino em andamento. Retome ou descarte a sessão antes de iniciar um novo treino."
                             sessionPrepStatus.value = com.example.services.telemetry.SessionPrepStepState(isPreparing = false)
-                            isStartingWorkoutSession = false
                         }
                         prepTrace.finishTrace(isSuccess = false, errorMessage = "Sessão ativa existente bloqueou novo treino")
                         return@launch
                     }
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
-                        activeSessionsList.value = activeSessions
-                        currentSessionId.value = activeSessions.first().id
-                        isMultipleActiveSessionsConflict.value = false
-                        showActiveSessionPrompt.value = true
-                        workoutErrorMessage.value = "Você possui um treino em andamento. Retome ou descarte a sessão antes de iniciar um novo treino."
-                        sessionPrepStatus.value = com.example.services.telemetry.SessionPrepStepState(isPreparing = false)
-                        isStartingWorkoutSession = false
-                    }
-                    prepTrace.finishTrace(isSuccess = false, errorMessage = "Sessão ativa existente bloqueou novo treino")
-                    return@launch
                 }
 
                 if (!forceStart) {
@@ -2361,6 +2439,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 sets = updatedSets
             )
             activeExercises.value = currentExs
+            persistActiveSessionToRoom()
             saveActiveSession()
             AudioSynth.playChimeSound()
         }
@@ -2373,6 +2452,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             currentExs[fromIndex] = currentExs[toIndex]
             currentExs[toIndex] = temp
             activeExercises.value = currentExs
+            persistActiveSessionToRoom()
             saveActiveSession()
             AudioSynth.playTickSound()
         }
@@ -2446,6 +2526,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        if (!isSessionRecoveryCompleted.get()) {
+            if (!isConfirmingWorkoutStart.compareAndSet(false, true)) return
+            viewModelScope.launch {
+                try {
+                    val resolved = checkActiveSessionsInternal()
+                    if (!resolved || !isSessionRecoveryCompleted.get()) {
+                        workoutErrorMessage.value = "Não foi possível verificar sessões pendentes no momento. Tente novamente antes de iniciar o treino."
+                        return@launch
+                    }
+                    if (showActiveSessionPrompt.value || activeSessionsList.value.isNotEmpty()) {
+                        workoutErrorMessage.value = "Você possui um treino em andamento. Retome ou descarte a sessão antes de iniciar um novo treino."
+                        return@launch
+                    }
+                    executeConfirmAndStartWorkoutInternal()
+                } finally {
+                    isConfirmingWorkoutStart.set(false)
+                }
+            }
+            return
+        }
+
+        executeConfirmAndStartWorkoutInternal()
+    }
+
+    private fun executeConfirmAndStartWorkoutInternal() {
+        if (!isSessionRecoveryCompleted.get()) return
+
         val method = selectedTrainingMethod.value
         val adjustedExercises = activeExercises.value.map { ex ->
             val updatedSets = method.applyMethod(ex.sets).map { s -> s.copy(completed = false, rpe = "") }
@@ -2462,11 +2569,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val sessionId = java.util.UUID.randomUUID().toString()
         currentSessionId.value = sessionId
         val startTime = System.currentTimeMillis()
+        val currentBootCount = WorkoutTimeUtils.readBootCount(getApplication())
 
-        sharedPrefs.edit()
-            .putString("active_session_id", sessionId)
-            .putLong("active_session_start_time", startTime)
-            .apply()
+        com.example.data.repository.WorkoutSessionRecoveryCoordinator.saveSessionMetadata(
+            sharedPrefs = sharedPrefs,
+            sessionId = sessionId,
+            startTimeMillis = startTime,
+            bootCount = currentBootCount
+        )
 
         // Start foreground service
         val workout = activeWorkout.value
@@ -2486,10 +2596,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 monotonicStartTimeNanos = System.nanoTime()
             )
             viewModelScope.launch(Dispatchers.IO) {
-                try {
-                    repository.saveWorkoutSession(sessionEntity)
-                } catch (e: Exception) {
-                    android.util.Log.e("MAX_PERFORMANCE_DEBUG", "Failed to save WorkoutSessionEntity to Room", e)
+                sessionUpdateMutex.withLock {
+                    try {
+                        repository.saveWorkoutSession(sessionEntity)
+                    } catch (e: Exception) {
+                        android.util.Log.e("MAX_PERFORMANCE_DEBUG", "Failed to save WorkoutSessionEntity to Room", e)
+                    }
                 }
             }
             try {
@@ -2511,14 +2623,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
+        saveActiveSession()
         startTicker()
         com.example.utils.MaxSoundManager.playWorkoutStarted(getApplication())
     }
 
     fun cancelPreSession() {
         tickerJob?.cancel()
-        com.example.services.WorkoutServiceState.workoutStartElapsedRealtime = 0L
-        com.example.services.WorkoutServiceState.workoutStartWallClockMillis = 0L
+        com.example.services.WorkoutServiceState.clearWorkoutClock()
         com.example.services.WorkoutServiceState.resetTimers()
         com.example.utils.GymAudioEngine.stopAllAndRelease(getApplication())
         com.example.services.WorkoutForegroundService.stopServiceAndClearNotifications(getApplication())
@@ -2533,13 +2645,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun pauseActiveSessionAndExit() {
         tickerJob?.cancel()
-        com.example.services.WorkoutServiceState.workoutStartElapsedRealtime = 0L
-        com.example.services.WorkoutServiceState.workoutStartWallClockMillis = 0L
+        persistActiveSessionToRoom()
+        saveActiveSession()
+        com.example.services.WorkoutServiceState.clearWorkoutClock()
         com.example.services.WorkoutServiceState.resetTimers()
         com.example.utils.GymAudioEngine.stopAllAndRelease(getApplication())
         com.example.services.WorkoutForegroundService.stopServiceAndClearNotifications(getApplication())
         activeScreen.value = AppScreen.HOME
-        saveActiveSession()
     }
 
     fun generateAndStartExpressWorkout(
@@ -2613,7 +2725,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun startTicker() {
         tickerJob?.cancel()
-        if (com.example.services.WorkoutServiceState.workoutStartElapsedRealtime <= 0L) {
+        if (!com.example.services.WorkoutServiceState.isWorkoutClockRunning) {
             com.example.services.WorkoutServiceState.startOrSyncWorkoutClock(workoutDurationSeconds.value)
         }
         tickerJob = viewModelScope.launch {
@@ -2756,12 +2868,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     isPreSessionActive.value = false
                 }
+                persistActiveSessionToRoom()
+                saveActiveSession()
             }
         }
         activeRpePrompt.value = null
     }
 
     fun persistActiveSessionToRoom() {
+        if (!isSessionRecoveryCompleted.get()) return
+        if (workoutFlowState.value != WorkoutFlowState.Running || isPreSessionActive.value) return
         val sid = currentSessionId.value
         val exs = activeExercises.value
         val wrk = activeWorkout.value
@@ -2776,6 +2892,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         val serialized = JsonUtils.serializeWorkoutExercises(exs)
+        val durationCheckpoint = maxOf(
+            0L,
+            com.example.services.WorkoutServiceState.computeWorkoutDurationSeconds(),
+            workoutDurationSeconds.value
+        )
         viewModelScope.launch(Dispatchers.IO) {
             sessionUpdateMutex.withLock {
                 try {
@@ -2796,19 +2917,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             return@withLock
                         }
 
+                        val safeDuration = maxOf(currentDb.durationSeconds, durationCheckpoint)
                         // Atualização otimista baseada na versão persistida e recuperada do banco
-                        val updated = repository.updateWorkoutSessionExercisesOptimistic(
+                        val updated = repository.updateWorkoutSessionExercisesAndDurationOptimistic(
                             sessionId = targetSid,
                             exercisesJson = serialized,
+                            durationSeconds = safeDuration,
                             expectedVersion = currentDb.version
                         )
                         if (!updated) {
                             android.util.Log.w("MainViewModel", "Conflito de versão ao persistir séries para $targetSid (versão esperada: ${currentDb.version}). Buscando versão atualizada no banco...")
                             val freshDb = repository.getWorkoutSessionById(targetSid)
                             if (freshDb != null && freshDb.status == WorkoutSessionStatus.ATIVO.rawValue) {
-                                repository.updateWorkoutSessionExercisesOptimistic(
+                                repository.updateWorkoutSessionExercisesAndDurationOptimistic(
                                     sessionId = targetSid,
                                     exercisesJson = serialized,
+                                    durationSeconds = maxOf(freshDb.durationSeconds, durationCheckpoint),
                                     expectedVersion = freshDb.version
                                 )
                             }
@@ -2816,20 +2940,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     } else {
                         // Se não existia sessão salva, criar nova com status ATIVO e version 1
                         val newSid = UUID.randomUUID().toString()
+                        val startTime = System.currentTimeMillis()
                         currentSessionId.value = newSid
                         val newSession = WorkoutSessionEntity(
                             id = newSid,
                             workoutId = wrk.id,
                             workoutName = wrk.name,
                             status = WorkoutSessionStatus.ATIVO.rawValue,
-                            startTime = System.currentTimeMillis(),
-                            durationSeconds = workoutDurationSeconds.value,
+                            startTime = startTime,
+                            durationSeconds = durationCheckpoint,
                             exercisesJson = serialized,
                             version = 1,
                             startTimeMonotonic = android.os.SystemClock.elapsedRealtime(),
                             monotonicStartTimeNanos = System.nanoTime()
                         )
                         repository.saveWorkoutSession(newSession)
+                        com.example.data.repository.WorkoutSessionRecoveryCoordinator.saveSessionMetadata(
+                            sharedPrefs = sharedPrefs,
+                            sessionId = newSid,
+                            startTimeMillis = startTime,
+                            bootCount = WorkoutTimeUtils.readBootCount(getApplication())
+                        )
                     }
                 } catch (e: Exception) {
                     android.util.Log.e("MAX_PERFORMANCE_DEBUG", "Failed to persist active session to Room", e)
@@ -3168,6 +3299,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val updatedSets = ex.sets.map { it.copy(setType = newType) }
             currentExs[exerciseIndex] = ex.copy(sets = updatedSets)
             activeExercises.value = currentExs
+            persistActiveSessionToRoom()
             AudioSynth.playTickSound()
         }
     }
@@ -3178,6 +3310,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val ex = currentExs[exerciseIndex]
             currentExs[exerciseIndex] = ex.copy(restTimeSeconds = restSeconds)
             activeExercises.value = currentExs
+            persistActiveSessionToRoom()
             AudioSynth.playTickSound()
             
             // Save the customized rest time so it is remembered!
@@ -3219,6 +3352,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             if (updated) {
                 activeExercises.value = currentExs
+                persistActiveSessionToRoom()
                 com.example.services.telemetry.Telemetry.log(
                     com.example.data.model.TelemetryEventType.PROGRESSION_CHANGED,
                     mapOf(
@@ -3250,6 +3384,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val reindexedSets = currentSets.mapIndexed { index, s -> s.copy(index = index + 1) }
                 currentExs[exerciseIndex] = ex.copy(sets = reindexedSets)
                 activeExercises.value = currentExs
+                persistActiveSessionToRoom()
                 AudioSynth.playTickSound()
             }
         }
@@ -3271,6 +3406,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             currentSets.add(newSet)
             currentExs[exerciseIndex] = ex.copy(sets = currentSets)
             activeExercises.value = currentExs
+            persistActiveSessionToRoom()
             AudioSynth.playTickSound()
         }
     }
@@ -3593,25 +3729,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 val finishSid = currentSessionId.value
                 val finishTime = System.currentTimeMillis()
+                val currentBootCount = WorkoutTimeUtils.readBootCount(getApplication())
+                val savedBootCount = com.example.data.repository.WorkoutSessionRecoveryCoordinator.readSavedBootCount(sharedPrefs)
                 withContext(Dispatchers.IO) {
                     sessionUpdateMutex.withLock {
                         try {
                             val sessionDb = finishSid?.let { repository.getWorkoutSessionById(it) } 
                                 ?: repository.getActiveWorkoutSession()
                             val finishDur = if (sessionDb != null) {
-                                WorkoutTimeUtils.calculateMonotonicDurationSeconds(sessionDb.startTimeMonotonic, sessionDb.startTime, sessionDb.monotonicStartTimeNanos)
+                                WorkoutTimeUtils.calculateSafeDurationSeconds(
+                                    startTimeMonotonic = sessionDb.startTimeMonotonic,
+                                    fallbackStartMillis = sessionDb.startTime,
+                                    monotonicStartTimeNanos = sessionDb.monotonicStartTimeNanos,
+                                    persistedDurationSeconds = maxOf(sessionDb.durationSeconds, workoutDurationSeconds.value),
+                                    savedBootCount = savedBootCount,
+                                    currentBootCount = currentBootCount
+                                )
                             } else {
                                 maxOf(0L, workoutDurationSeconds.value)
                             }
                             val targetId = finishSid ?: sessionDb?.id
                             if (targetId != null) {
                                 val success = if (sessionDb != null) {
-                                    repository.updateWorkoutSessionStatusVersioned(
+                                    repository.updateWorkoutSessionStatusExercisesAndDurationVersioned(
                                         sessionId = targetId,
                                         status = WorkoutSessionStatus.CONCLUIDO.rawValue,
                                         newVersion = sessionDb.version + 1,
                                         completedAt = finishTime,
-                                        durationSeconds = finishDur
+                                        durationSeconds = finishDur,
+                                        exercisesJson = finalJson
                                     )
                                 } else {
                                     repository.updateWorkoutSessionStatus(
@@ -3655,6 +3801,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
                 currentSessionId.value = null
+                activeSessionsList.value = emptyList()
+                showActiveSessionPrompt.value = false
                 clearSavedActiveSession()
 
                 val activeGym = activeGymProfile.value
@@ -3701,28 +3849,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 val sid = currentSessionId.value
-                val sessionDb = sid?.let { repository.getWorkoutSessionById(it) } ?: repository.getActiveWorkoutSession()
-                if (sessionDb != null) {
-                    val finishTime = System.currentTimeMillis()
-                    val durationSec = WorkoutTimeUtils.calculateMonotonicDurationSeconds(
-                        sessionDb.startTimeMonotonic,
-                        sessionDb.startTime,
-                        sessionDb.monotonicStartTimeNanos
-                    )
-                    val success = repository.updateWorkoutSessionStatusVersioned(
-                        sessionId = sessionDb.id,
-                        status = WorkoutSessionStatus.NAO_REALIZADO.rawValue,
-                        newVersion = sessionDb.version + 1,
-                        completedAt = finishTime,
-                        durationSeconds = durationSec
-                    )
-                    if (!success) {
-                        android.util.Log.e("MainViewModel", "Falha ao transicionar para NAO_REALIZADO (status não era ATIVO ou versão em conflito)")
+                val currentBootCount = WorkoutTimeUtils.readBootCount(getApplication())
+                val savedBootCount = com.example.data.repository.WorkoutSessionRecoveryCoordinator.readSavedBootCount(sharedPrefs)
+                sessionUpdateMutex.withLock {
+                    val sessionDb = sid?.let { repository.getWorkoutSessionById(it) } ?: repository.getActiveWorkoutSession()
+                    if (sessionDb != null) {
+                        val finishTime = System.currentTimeMillis()
+                        val durationSec = WorkoutTimeUtils.calculateSafeDurationSeconds(
+                            startTimeMonotonic = sessionDb.startTimeMonotonic,
+                            fallbackStartMillis = sessionDb.startTime,
+                            monotonicStartTimeNanos = sessionDb.monotonicStartTimeNanos,
+                            persistedDurationSeconds = maxOf(sessionDb.durationSeconds, workoutDurationSeconds.value),
+                            savedBootCount = savedBootCount,
+                            currentBootCount = currentBootCount
+                        )
+                        val success = repository.updateWorkoutSessionStatusVersioned(
+                            sessionId = sessionDb.id,
+                            status = WorkoutSessionStatus.NAO_REALIZADO.rawValue,
+                            newVersion = sessionDb.version + 1,
+                            completedAt = finishTime,
+                            durationSeconds = durationSec
+                        )
+                        if (!success) {
+                            android.util.Log.e("MainViewModel", "Falha ao transicionar para NAO_REALIZADO (status não era ATIVO ou versão em conflito)")
+                        }
                     }
                 }
 
                 withContext(Dispatchers.Main) {
                     currentSessionId.value = null
+                    activeSessionsList.value = emptyList()
+                    showActiveSessionPrompt.value = false
                     clearSavedActiveSession()
                     activeWorkout.value = null
                     activeExercises.value = emptyList()
@@ -3730,8 +3887,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     workoutFlowState.value = WorkoutFlowState.Abandoned
                     showNoSetsDialog.value = false
                     activeScreen.value = AppScreen.HOME
-                    checkActiveSessions()
                 }
+                checkActiveSessionsInternal()
             } catch (e: Exception) {
                 android.util.Log.e("MainViewModel", "Erro ao encerrar treino não realizado", e)
                 withContext(Dispatchers.Main) {
@@ -3771,32 +3928,50 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val discardTime = System.currentTimeMillis()
-                val durationSec = WorkoutTimeUtils.calculateMonotonicDurationSeconds(
-                    session.startTimeMonotonic,
-                    session.startTime,
-                    session.monotonicStartTimeNanos
-                )
-                val success = repository.updateWorkoutSessionStatusVersioned(
-                    sessionId = session.id,
-                    status = WorkoutSessionStatus.DESCARTADO.rawValue,
-                    newVersion = session.version + 1,
-                    completedAt = discardTime,
-                    durationSeconds = durationSec
-                )
-                if (!success) {
-                    android.util.Log.e("MainViewModel", "Falha na transição para DESCARTADO (status não era ATIVO ou versão em conflito)")
+                val currentBootCount = WorkoutTimeUtils.readBootCount(getApplication())
+                val savedBootCount = com.example.data.repository.WorkoutSessionRecoveryCoordinator.readSavedBootCount(sharedPrefs)
+                val shouldClearPrefs: Boolean
+                sessionUpdateMutex.withLock {
+                    val fresh = repository.getWorkoutSessionById(session.id) ?: session
+                    val durationSec = WorkoutTimeUtils.calculateSafeDurationSeconds(
+                        startTimeMonotonic = fresh.startTimeMonotonic,
+                        fallbackStartMillis = fresh.startTime,
+                        monotonicStartTimeNanos = fresh.monotonicStartTimeNanos,
+                        persistedDurationSeconds = fresh.durationSeconds,
+                        savedBootCount = savedBootCount,
+                        currentBootCount = currentBootCount
+                    )
+                    val success = repository.updateWorkoutSessionStatusVersioned(
+                        sessionId = fresh.id,
+                        status = WorkoutSessionStatus.DESCARTADO.rawValue,
+                        newVersion = fresh.version + 1,
+                        completedAt = discardTime,
+                        durationSeconds = durationSec
+                    )
+                    if (!success) {
+                        android.util.Log.e("MainViewModel", "Falha na transição para DESCARTADO (status não era ATIVO ou versão em conflito)")
+                    }
+                    val prefsSid = sharedPrefs.getString(
+                        com.example.data.repository.WorkoutSessionRecoveryCoordinator.KEY_ACTIVE_SESSION_ID,
+                        null
+                    )
+                    shouldClearPrefs = prefsSid == session.id ||
+                        currentSessionId.value == session.id ||
+                        repository.getAllActiveWorkoutSessions().isEmpty()
                 }
 
                 if (currentSessionId.value == session.id) {
                     withContext(Dispatchers.Main) {
                         cancelActiveWorkoutDirect()
                     }
+                } else if (shouldClearPrefs) {
+                    clearSavedActiveSession()
                 }
 
                 withContext(Dispatchers.Main) {
                     sessionToDiscardConfirm.value = null
                 }
-                checkActiveSessions()
+                checkActiveSessionsInternal()
             } catch (e: Exception) {
                 android.util.Log.e("MainViewModel", "Erro ao descartar sessão", e)
                 withContext(Dispatchers.Main) {
@@ -3819,6 +3994,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         com.example.services.WorkoutForegroundService.stopServiceAndClearNotifications(getApplication())
 
         currentSessionId.value = null
+        activeSessionsList.value = emptyList()
+        showActiveSessionPrompt.value = false
         clearSavedActiveSession()
         activeWorkout.value = null
         activeExercises.value = emptyList()
@@ -4697,7 +4874,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             ""
         }
         
-        val sessionId = sharedPrefs.getString("active_session_id", null) ?: java.util.UUID.randomUUID().toString()
+        val sessionId = currentSessionId.value
+            ?: sharedPrefs.getString("active_session_id", null)
+            ?: java.util.UUID.randomUUID().toString()
         val startTime = sharedPrefs.getLong("active_session_start_time", System.currentTimeMillis())
         
         return com.example.data.model.ActiveWorkoutSession(
@@ -4722,6 +4901,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun saveActiveSession() {
+        if (!isSessionRecoveryCompleted.get()) return
+
         val workout = activeWorkout.value
         val exercises = activeExercises.value
         val index = currentExerciseIndex.value
@@ -4734,57 +4915,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val tempoRemaining = tempoTimeRemaining.value
         val tempoTotal = tempoTimeTotal.value
         val isPreActive = isPreSessionActive.value
-        
-        val editor = sharedPrefs.edit()
-        
+
         if (workout == null || flowState == WorkoutFlowState.Finished || flowState == WorkoutFlowState.Abandoned) {
-            editor.putBoolean("has_active_session", false)
-            editor.remove("active_workout_session_json")
-            editor.remove("active_workout_json")
-            editor.remove("active_exercises_json")
-            editor.remove("active_current_exercise_index")
-            editor.remove("active_workout_duration_seconds")
-            editor.remove("active_is_rest_timer_active")
-            editor.remove("active_rest_time_remaining")
-            editor.remove("active_rest_time_total")
-            editor.remove("active_is_tempo_timer_active")
-            editor.remove("active_tempo_time_remaining")
-            editor.remove("active_tempo_time_total")
-            editor.remove("active_is_pre_session_active")
-            editor.remove("active_workout_flow_state")
-            editor.remove("active_session_timestamp")
-            editor.remove("active_session_default_rest_seconds")
-        } else {
-            val session = getActiveWorkoutSession()
-            if (session != null) {
-                val sessionJson = JsonUtils.serializeActiveWorkoutSession(session)
-                editor.putString("active_workout_session_json", sessionJson)
+            // Never wipe pending recovered session data while the resume prompt is displayed
+            if (workout == null && flowState == WorkoutFlowState.Idle &&
+                (showActiveSessionPrompt.value || activeSessionsList.value.isNotEmpty())
+            ) {
+                return
             }
-            
-            val exercisesJson = JsonUtils.serializeWorkoutExercises(exercises)
-            val hydratedWorkout = workout.copy(exercisesJson = exercisesJson)
-            val workoutJson = try {
-                JsonUtils.moshi.adapter(Workout::class.java).toJson(hydratedWorkout)
-            } catch (e: Exception) {
-                null
-            }
-            
-            editor.putString("active_workout_json", workoutJson)
-            editor.putString("active_exercises_json", exercisesJson)
-            editor.putInt("active_current_exercise_index", index)
-            editor.putLong("active_workout_duration_seconds", duration)
-            editor.putBoolean("active_is_rest_timer_active", isRestActive)
-            editor.putInt("active_rest_time_remaining", restRemaining)
-            editor.putInt("active_rest_time_total", restTotal)
-            editor.putBoolean("active_is_tempo_timer_active", isTempoActive)
-            editor.putInt("active_tempo_time_remaining", tempoRemaining)
-            editor.putInt("active_tempo_time_total", tempoTotal)
-            editor.putBoolean("active_is_pre_session_active", isPreActive)
-            editor.putString("active_workout_flow_state", getFlowStateString(flowState))
-            editor.putLong("active_session_timestamp", System.currentTimeMillis())
-            editor.putInt("active_session_default_rest_seconds", sessionDefaultRestSeconds.value)
-            editor.putBoolean("has_active_session", true)
+            com.example.data.repository.WorkoutSessionRecoveryCoordinator.clearFallbackPrefs(sharedPrefs)
+            return
         }
+
+        // Do not overwrite active recovery state with an unstarted pre-session preview
+        if (isPreActive || flowState != WorkoutFlowState.Running || exercises.isEmpty()) {
+            return
+        }
+
+        val session = getActiveWorkoutSession() ?: return
+        val editor = sharedPrefs.edit()
+        val sessionJson = JsonUtils.serializeActiveWorkoutSession(session)
+        editor.putString("active_workout_session_json", sessionJson)
+        editor.putString("active_session_id", session.sessionId)
+        editor.putLong("active_session_start_time", session.startTime)
+        val currentBootCount = WorkoutTimeUtils.readBootCount(getApplication())
+        if (currentBootCount != null) {
+            editor.putInt(
+                com.example.data.repository.WorkoutSessionRecoveryCoordinator.KEY_ACTIVE_SESSION_BOOT_COUNT,
+                currentBootCount
+            )
+        }
+
+        val exercisesJson = JsonUtils.serializeWorkoutExercises(exercises)
+        val hydratedWorkout = workout.copy(exercisesJson = exercisesJson)
+        val workoutJson = try {
+            JsonUtils.moshi.adapter(Workout::class.java).toJson(hydratedWorkout)
+        } catch (e: Exception) {
+            null
+        }
+
+        editor.putString("active_workout_json", workoutJson)
+        editor.putString("active_exercises_json", exercisesJson)
+        editor.putInt("active_current_exercise_index", index)
+        editor.putLong("active_workout_duration_seconds", duration)
+        editor.putBoolean("active_is_rest_timer_active", isRestActive)
+        editor.putInt("active_rest_time_remaining", restRemaining)
+        editor.putInt("active_rest_time_total", restTotal)
+        editor.putBoolean("active_is_tempo_timer_active", isTempoActive)
+        editor.putInt("active_tempo_time_remaining", tempoRemaining)
+        editor.putInt("active_tempo_time_total", tempoTotal)
+        editor.putBoolean("active_is_pre_session_active", false)
+        editor.putString("active_workout_flow_state", getFlowStateString(flowState))
+        editor.putLong("active_session_timestamp", System.currentTimeMillis())
+        editor.putInt("active_session_default_rest_seconds", sessionDefaultRestSeconds.value)
+        editor.putBoolean("has_active_session", true)
         editor.apply()
     }
 
@@ -4799,6 +4983,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             context = getApplication()
         )
         activeExercises.value = recalculatedList
+        persistActiveSessionToRoom()
         saveActiveSession()
         val msg = "Sequência alterada: cargas reajustadas para a nova curva de fadiga"
         fastSetWarningMessage.value = msg
@@ -4828,6 +5013,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (index in currentList.indices) {
             currentList.removeAt(index)
             activeExercises.value = currentList
+            persistActiveSessionToRoom()
             saveActiveSession()
             try {
                 com.example.utils.AudioSynth.playTickSound()
@@ -4894,6 +5080,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             context = getApplication()
         )
         activeExercises.value = recalculated
+        persistActiveSessionToRoom()
         saveActiveSession()
         val msg = "Sequência alterada: cargas reajustadas para a nova curva de fadiga"
         fastSetWarningMessage.value = msg
@@ -4910,311 +5097,106 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun clearSavedActiveSession() {
-        val editor = sharedPrefs.edit()
-        editor.putBoolean("has_active_session", false)
-        editor.remove("active_workout_session_json")
-        editor.remove("active_workout_json")
-        editor.remove("active_exercises_json")
-        editor.remove("active_current_exercise_index")
-        editor.remove("active_workout_duration_seconds")
-        editor.remove("active_is_rest_timer_active")
-        editor.remove("active_rest_time_remaining")
-        editor.remove("active_rest_time_total")
-        editor.remove("active_is_tempo_timer_active")
-        editor.remove("active_tempo_time_remaining")
-        editor.remove("active_tempo_time_total")
-        editor.remove("active_is_pre_session_active")
-        editor.remove("active_workout_flow_state")
-        editor.remove("active_session_timestamp")
-        editor.remove("active_session_default_rest_seconds")
-        editor.apply()
+        com.example.data.repository.WorkoutSessionRecoveryCoordinator.clearFallbackPrefs(sharedPrefs)
     }
 
     fun restoreActiveSession(targetSessionId: String? = null) {
         viewModelScope.launch {
             try {
                 val sid = targetSessionId ?: currentSessionId.value ?: activeSessionsList.value.firstOrNull()?.id
-                val activeDb = if (sid != null) {
-                    repository.getWorkoutSessionById(sid)
-                } else {
-                    repository.getActiveWorkoutSession()
-                }
+                val currentBootCount = WorkoutTimeUtils.readBootCount(getApplication())
+                val allWorkouts = repository.workoutsFlow.first()
 
-                if (activeDb != null && activeDb.status == WorkoutSessionStatus.ATIVO.rawValue) {
-                    currentSessionId.value = activeDb.id
-                    val rawExercises = try {
-                        JsonUtils.parseWorkoutExercises(activeDb.exercisesJson)
-                    } catch (e: Exception) {
-                        emptyList()
-                    }
-                    if (rawExercises.isNotEmpty() && !rawExercises.any { it.sets.isNullOrEmpty() }) {
-                        val exercises = rawExercises.map { ex ->
-                            val setsList = ex.sets ?: emptyList()
-                            ex.copy(sets = setsList.map { set ->
-                                val repsVal = set.reps ?: 1
-                                val weightVal = set.weight ?: 0f
-                                set.copy(
-                                    reps = repsVal.coerceIn(0, 999),
-                                    weight = weightVal.coerceIn(0f, 9999f)
-                                )
-                            })
-                        }
-                        val allWorkouts = repository.workoutsFlow.first()
-                        val baseWorkout = allWorkouts.find { it.id == activeDb.workoutId }
-                            ?: Workout(id = activeDb.workoutId, name = activeDb.workoutName, exercisesJson = activeDb.exercisesJson)
-
-                        val hydratedWorkout = baseWorkout.copy(exercisesJson = activeDb.exercisesJson)
-                        activeWorkout.value = hydratedWorkout
-                        activeExercises.value = exercises
-                        currentExerciseIndex.value = 0
-
-                        val timeElapsedSeconds = WorkoutTimeUtils.calculateMonotonicDurationSeconds(
-                            activeDb.startTimeMonotonic,
-                            activeDb.startTime,
-                            activeDb.monotonicStartTimeNanos
+                val payload = withContext(Dispatchers.IO) {
+                    sessionUpdateMutex.withLock {
+                        com.example.data.repository.WorkoutSessionRecoveryCoordinator.resolveSessionForRestore(
+                            repository = repository,
+                            sharedPrefs = sharedPrefs,
+                            allWorkouts = allWorkouts,
+                            targetSessionId = sid,
+                            currentBootCount = currentBootCount
                         )
-                        com.example.services.WorkoutServiceState.startOrSyncWorkoutClock(timeElapsedSeconds)
-
-                        // O timer de descanso não pode alegar ter continuado rodando
-                        com.example.services.WorkoutServiceState.resetTimers()
-                        isPreSessionActive.value = false
-                        workoutFlowState.value = WorkoutFlowState.Running
-                        showActiveSessionPrompt.value = false
-                        isMultipleActiveSessionsConflict.value = false
-
-                        activeScreen.value = AppScreen.PLAYER
-                        startTicker()
-                        saveActiveSession()
-                        android.util.Log.d("MAX_PERFORMANCE_DEBUG", "Sessão de treino ativa restaurada com sucesso do Room: ${activeDb.workoutName}")
-                        return@launch
                     }
                 }
-            } catch (e: Exception) {
-                android.util.Log.w("MAX_PERFORMANCE_DEBUG", "Falha ao restaurar sessão ativa do Room, tentando sharedPrefs", e)
-            }
 
-            restoreActiveSessionFromPrefs()
-        }
-    }
-
-    private fun restoreActiveSessionFromPrefs() {
-        val hasSession = sharedPrefs.getBoolean("has_active_session", false)
-        if (!hasSession) return
-        
-        val sessionJson = sharedPrefs.getString("active_workout_session_json", null)
-        if (sessionJson != null) {
-            val session = JsonUtils.parseActiveWorkoutSession(sessionJson)
-            if (session != null) {
-                try {
-                    val workout = JsonUtils.moshi.adapter(Workout::class.java).fromJson(session.workoutJson)
-                    val rawExercises = JsonUtils.parseWorkoutExercises(session.exercisesJson)
-
-                    // Rigid validation before restoration
-                    if (workout == null || session.exercisesJson.isBlank() || session.exercisesJson == "[]" ||
-                        rawExercises.isEmpty() || rawExercises.any { it.sets.isNullOrEmpty() }
-                    ) {
-                        android.util.Log.w("MAX_PERFORMANCE_DEBUG", "Aborting session restore: corrupted exercises or empty sets found.")
-                        clearSavedActiveSession()
-                        activeScreen.value = AppScreen.HOME
-                        return
-                    }
-                    
-                    val exercises = rawExercises.map { ex ->
-                        val setsList = ex.sets ?: emptyList()
-                        ex.copy(sets = setsList.map { set ->
-                            val repsVal = set.reps ?: 1
-                            val weightVal = set.weight ?: 0f
-                            set.copy(
-                                reps = repsVal.coerceIn(1, 999),
-                                weight = weightVal.coerceIn(0f, 9999f)
-                            )
-                        })
-                    }
-                    
-                    val hydratedWorkout = workout.copy(exercisesJson = session.exercisesJson)
-                    activeWorkout.value = hydratedWorkout
-                    activeExercises.value = exercises
-                    currentExerciseIndex.value = session.currentExerciseIndex
-                    
-                    val savedTimestamp = sharedPrefs.getLong("active_session_timestamp", 0L)
-                    val timeElapsedSeconds = if (savedTimestamp > 0) (System.currentTimeMillis() - savedTimestamp) / 1000 else 0L
-                    
-                    com.example.services.WorkoutServiceState.startOrSyncWorkoutClock(session.elapsedTime + timeElapsedSeconds)
-                    
-                    val timersMap = session.timers.split(",").associate {
-                        val parts = it.split("=")
-                        if (parts.size == 2) parts[0] to parts[1].toBoolean() else "" to false
-                    }
-                    val isRestActive = timersMap["restActive"] ?: false
-                    
-                    val restParts = session.restStatus.split(":")
-                    val savedRestRemaining = if (restParts.isNotEmpty()) restParts[0].toIntOrNull() ?: 0 else 0
-                    val savedRestTotal = if (restParts.size > 1) restParts[1].toIntOrNull() ?: 60 else 60
-                    if (isRestActive) {
-                        val newRestRemaining = (savedRestRemaining - timeElapsedSeconds).toInt()
-                        if (newRestRemaining > 0) {
-                            com.example.services.WorkoutServiceState.startRestClock(newRestRemaining)
-                            restTimeTotal.value = savedRestTotal
-                        } else {
-                            com.example.services.WorkoutServiceState.resetTimers()
-                        }
-                    } else {
-                        com.example.services.WorkoutServiceState.resetTimers()
-                        restTimeTotal.value = savedRestTotal
-                    }
-                    
-                    isTempoTimerActive.value = timersMap["tempoActive"] ?: false
-                    
-                    val isPreActive = sharedPrefs.getBoolean("active_is_pre_session_active", false)
-                    isPreSessionActive.value = isPreActive
-                    
-                    sessionDefaultRestSeconds.value = sharedPrefs.getInt("active_session_default_rest_seconds", 60)
-                    
-                    val flowStateStr = sharedPrefs.getString("active_workout_flow_state", "Running")
-                    workoutFlowState.value = parseFlowState(flowStateStr)
-                    
-                    activeScreen.value = AppScreen.PLAYER
-                    
-                    if (!isPreActive) {
-                        startTicker()
-                    }
-                    
-                    android.util.Log.d("MAX_PERFORMANCE_DEBUG", "Sessão de treino ativa restaurada de ActiveWorkoutSession com sucesso: ${workout.name}")
-                    return
-                } catch (e: Exception) {
-                    android.util.Log.w("MAX_PERFORMANCE_DEBUG", "Erro ao restaurar de ActiveWorkoutSession, caindo para o método padrão", e)
-                    clearSavedActiveSession()
+                if (payload == null) {
+                    activeSessionsList.value = emptyList()
+                    currentSessionId.value = null
+                    showActiveSessionPrompt.value = false
+                    isMultipleActiveSessionsConflict.value = false
                     activeScreen.value = AppScreen.HOME
-                    return
+                    android.util.Log.w("MAX_PERFORMANCE_DEBUG", "Nenhuma sessão ativa válida disponível para restauração (encerrada, ausente ou corrompida).")
+                    return@launch
                 }
-            }
-        }
-        
-        val workoutJson = sharedPrefs.getString("active_workout_json", null)
-        val exercisesJson = sharedPrefs.getString("active_exercises_json", null)
-        
-        if (workoutJson == null || exercisesJson == null || exercisesJson.isBlank() || exercisesJson == "[]") {
-            clearSavedActiveSession()
-            activeScreen.value = AppScreen.HOME
-            return
-        }
-        
-        try {
-            val workout = JsonUtils.moshi.adapter(Workout::class.java).fromJson(workoutJson)
-            val rawExercises = JsonUtils.parseWorkoutExercises(exercisesJson)
 
-            // Rigid validation before restoration
-            if (workout == null || rawExercises.isEmpty() || rawExercises.any { it.sets.isNullOrEmpty() }) {
-                android.util.Log.w("MAX_PERFORMANCE_DEBUG", "Aborting session restore: corrupted exercises or empty sets found.")
-                clearSavedActiveSession()
-                activeScreen.value = AppScreen.HOME
-                return
-            }
-            
-            // Defensively sanitize reps and weights to prevent layout crashes from previous corrupt state
-            val exercises = rawExercises.map { ex ->
-                val setsList = ex.sets ?: emptyList()
-                ex.copy(sets = setsList.map { set ->
-                    val repsVal = set.reps ?: 1
-                    val weightVal = set.weight ?: 0f
-                    set.copy(
-                        reps = repsVal.coerceIn(1, 999),
-                        weight = weightVal.coerceIn(0f, 9999f)
-                    )
-                })
-            }
-            
-            val hydratedWorkout = workout.copy(exercisesJson = exercisesJson)
-            activeWorkout.value = hydratedWorkout
-            activeExercises.value = exercises
-            currentExerciseIndex.value = sharedPrefs.getInt("active_current_exercise_index", 0)
-            
-            val savedTimestamp = sharedPrefs.getLong("active_session_timestamp", 0L)
-            val timeElapsedSeconds = if (savedTimestamp > 0) (System.currentTimeMillis() - savedTimestamp) / 1000 else 0L
+                currentSessionId.value = payload.sessionId
+                activeWorkout.value = payload.workout
+                activeExercises.value = payload.exercises
+                currentExerciseIndex.value = payload.currentExerciseIndex
+                sessionDefaultRestSeconds.value = payload.defaultRestSeconds
 
-            val duration = sharedPrefs.getLong("active_workout_duration_seconds", 0L)
-            com.example.services.WorkoutServiceState.startOrSyncWorkoutClock(duration + timeElapsedSeconds)
-            
-            val isRestActive = sharedPrefs.getBoolean("active_is_rest_timer_active", false)
-            val savedRestRemaining = sharedPrefs.getInt("active_rest_time_remaining", 0)
-            val savedRestTotal = sharedPrefs.getInt("active_rest_time_total", 60)
-            if (isRestActive) {
-                val newRestRemaining = (savedRestRemaining - timeElapsedSeconds).toInt()
-                if (newRestRemaining > 0) {
-                    com.example.services.WorkoutServiceState.startRestClock(newRestRemaining)
-                    restTimeTotal.value = savedRestTotal
-                } else {
-                    com.example.services.WorkoutServiceState.resetTimers()
-                }
-            } else {
+                com.example.services.WorkoutServiceState.startOrSyncWorkoutClock(payload.elapsedDurationSeconds)
+                // O timer de descanso não pode alegar ter continuado rodando após morte de processo / reboot
                 com.example.services.WorkoutServiceState.resetTimers()
-                restTimeTotal.value = savedRestTotal
-            }
-            
-            val isTempoActive = sharedPrefs.getBoolean("active_is_tempo_timer_active", false)
-            isTempoTimerActive.value = isTempoActive
-            val savedTempoRemaining = sharedPrefs.getInt("active_tempo_time_remaining", 0)
-            if (isTempoActive) {
-                val newTempoRemaining = (savedTempoRemaining - timeElapsedSeconds).toInt()
-                if (newTempoRemaining > 0) {
-                    tempoTimeRemaining.value = newTempoRemaining
-                } else {
-                    tempoTimeRemaining.value = 0
-                    isTempoTimerActive.value = false
-                }
-            } else {
-                tempoTimeRemaining.value = savedTempoRemaining
-            }
-            tempoTimeTotal.value = sharedPrefs.getInt("active_tempo_time_total", 0)
-            
-            val isPreActive = sharedPrefs.getBoolean("active_is_pre_session_active", false)
-            isPreSessionActive.value = isPreActive
-            
-            sessionDefaultRestSeconds.value = sharedPrefs.getInt("active_session_default_rest_seconds", 60)
-            
-            val flowStateStr = sharedPrefs.getString("active_workout_flow_state", "Running")
-            workoutFlowState.value = parseFlowState(flowStateStr)
-            
-            // Restore screen to PLAYER so user is brought exactly back to where they were!
-            activeScreen.value = AppScreen.PLAYER
-            
-            // Restart the ticker!
-            if (!isPreActive) {
+
+                isPreSessionActive.value = false
+                workoutFlowState.value = WorkoutFlowState.Running
+                showActiveSessionPrompt.value = false
+                activeSessionsList.value = emptyList()
+                isMultipleActiveSessionsConflict.value = false
+
+                com.example.data.repository.WorkoutSessionRecoveryCoordinator.saveSessionMetadata(
+                    sharedPrefs = sharedPrefs,
+                    sessionId = payload.sessionId,
+                    startTimeMillis = payload.startTimeMillis,
+                    bootCount = currentBootCount
+                )
+
+                activeScreen.value = AppScreen.PLAYER
                 startTicker()
+                saveActiveSession()
+                android.util.Log.d(
+                    "MAX_PERFORMANCE_DEBUG",
+                    "Sessão de treino ativa restaurada com sucesso (${payload.source}): ${payload.workout.name}"
+                )
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                currentCoroutineContext().ensureActive()
+                throw ce
+            } catch (e: Exception) {
+                android.util.Log.w("MAX_PERFORMANCE_DEBUG", "Falha ao restaurar sessão ativa", e)
+                showActiveSessionPrompt.value = false
+                activeSessionsList.value = emptyList()
+                activeScreen.value = AppScreen.HOME
             }
-            
-            android.util.Log.d("MAX_PERFORMANCE_DEBUG", "Sessão de treino ativa restaurada com sucesso para o treino: ${workout.name}")
-        } catch (e: Exception) {
-            android.util.Log.w("MAX_PERFORMANCE_DEBUG", "Erro ao restaurar sessão ativa", e)
-            clearSavedActiveSession()
-            activeScreen.value = AppScreen.HOME
         }
     }
- 
+
     fun setupActiveSessionAutoSave() {
+        if (!isSessionRecoveryCompleted.get()) return
+        if (!autoSaveInitialized.compareAndSet(false, true)) return
         viewModelScope.launch {
-            activeWorkout.collect { saveActiveSession() }
+            activeWorkout.drop(1).collect { saveActiveSession() }
         }
         viewModelScope.launch {
-            activeExercises.collect { saveActiveSession() }
+            activeExercises.drop(1).collect { saveActiveSession() }
         }
         viewModelScope.launch {
-            currentExerciseIndex.collect { saveActiveSession() }
+            currentExerciseIndex.drop(1).collect { saveActiveSession() }
         }
         viewModelScope.launch {
-            isRestTimerActive.collect { saveActiveSession() }
+            isRestTimerActive.drop(1).collect { saveActiveSession() }
         }
         viewModelScope.launch {
-            isTempoTimerActive.collect { saveActiveSession() }
+            isTempoTimerActive.drop(1).collect { saveActiveSession() }
         }
         viewModelScope.launch {
-            isPreSessionActive.collect { saveActiveSession() }
+            isPreSessionActive.drop(1).collect { saveActiveSession() }
         }
         viewModelScope.launch {
-            sessionDefaultRestSeconds.collect { saveActiveSession() }
+            sessionDefaultRestSeconds.drop(1).collect { saveActiveSession() }
         }
         viewModelScope.launch {
-            workoutFlowState.collect { saveActiveSession() }
+            workoutFlowState.drop(1).collect { saveActiveSession() }
         }
     }
 

@@ -102,6 +102,9 @@ class FitnessRepository(private val db: AppDatabase) {
 
     suspend fun getWorkoutSessionById(id: String): WorkoutSessionEntity? = db.workoutSessionDao().getSessionById(id)
 
+    suspend fun getWorkoutSessionByWorkoutAndStartTime(workoutId: String, startTime: Long): WorkoutSessionEntity? =
+        db.workoutSessionDao().getSessionByWorkoutAndStartTime(workoutId, startTime)
+
     suspend fun getWorkoutSessionVersion(id: String): Int? = db.workoutSessionDao().getSessionVersion(id)
 
     suspend fun saveWorkoutSession(session: WorkoutSessionEntity) = sessionWriteMutex.withLock {
@@ -119,6 +122,20 @@ class FitnessRepository(private val db: AppDatabase) {
         expectedVersion: Int
     ): Boolean = sessionWriteMutex.withLock {
         db.workoutSessionDao().updateExercisesJsonOptimistic(sessionId, exercisesJson, expectedVersion) > 0
+    }
+
+    suspend fun updateWorkoutSessionExercisesAndDurationOptimistic(
+        sessionId: String,
+        exercisesJson: String,
+        durationSeconds: Long,
+        expectedVersion: Int
+    ): Boolean = sessionWriteMutex.withLock {
+        db.workoutSessionDao().updateExercisesAndDurationOptimistic(
+            sessionId = sessionId,
+            exercisesJson = exercisesJson,
+            durationSeconds = maxOf(0L, durationSeconds),
+            expectedVersion = expectedVersion
+        ) > 0
     }
 
     suspend fun updateWorkoutSessionStatus(
@@ -153,6 +170,14 @@ class FitnessRepository(private val db: AppDatabase) {
         durationSeconds: Long
     ): Boolean = sessionWriteMutex.withLock {
         val current = db.workoutSessionDao().getSessionById(sessionId) ?: return false
+        val expectedCurrentVersion = newVersion - 1
+        if (expectedCurrentVersion < 1 || current.version != expectedCurrentVersion) {
+            android.util.Log.w(
+                "MAX_PERFORMANCE_DEBUG",
+                "Conflito otimista de versão em updateWorkoutSessionStatusVersioned para $sessionId: atual=${current.version}, esperada=$expectedCurrentVersion"
+            )
+            return false
+        }
         val fromStatus = WorkoutSessionStatus.fromValue(current.status)
         val toStatus = WorkoutSessionStatus.fromValue(status)
         if (!com.example.data.model.WorkoutSessionStateMachine.isValidTransition(fromStatus, toStatus)) {
@@ -166,6 +191,41 @@ class FitnessRepository(private val db: AppDatabase) {
             expectedVersion = newVersion,
             completedAt = completedAt,
             durationSeconds = validDuration
+        )
+        affected > 0
+    }
+
+    suspend fun updateWorkoutSessionStatusExercisesAndDurationVersioned(
+        sessionId: String,
+        status: String,
+        newVersion: Int,
+        completedAt: Long?,
+        durationSeconds: Long,
+        exercisesJson: String
+    ): Boolean = sessionWriteMutex.withLock {
+        val current = db.workoutSessionDao().getSessionById(sessionId) ?: return false
+        val expectedCurrentVersion = newVersion - 1
+        if (expectedCurrentVersion < 1 || current.version != expectedCurrentVersion) {
+            android.util.Log.w(
+                "MAX_PERFORMANCE_DEBUG",
+                "Conflito otimista de versão em updateWorkoutSessionStatusExercisesAndDurationVersioned para $sessionId: atual=${current.version}, esperada=$expectedCurrentVersion"
+            )
+            return false
+        }
+        val fromStatus = WorkoutSessionStatus.fromValue(current.status)
+        val toStatus = WorkoutSessionStatus.fromValue(status)
+        if (!com.example.data.model.WorkoutSessionStateMachine.isValidTransition(fromStatus, toStatus)) {
+            android.util.Log.w("MAX_PERFORMANCE_DEBUG", "Transição de status versionada rejeitada para $sessionId: $fromStatus -> $toStatus")
+            return false
+        }
+        val validDuration = maxOf(0L, durationSeconds)
+        val affected = db.workoutSessionDao().updateStatusExercisesAndDurationVersioned(
+            sessionId = sessionId,
+            newStatus = toStatus.rawValue,
+            expectedVersion = newVersion,
+            completedAt = completedAt,
+            durationSeconds = validDuration,
+            exercisesJson = exercisesJson
         )
         affected > 0
     }
